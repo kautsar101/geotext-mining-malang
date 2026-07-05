@@ -20,6 +20,12 @@
   --chart-positive: #0D9488;
   --chart-negative: #E11D48;
   --chart-neutral: #94A3B8;
+  --chart-1: #0D9488;
+  --chart-2: #14B8A6;
+  --chart-3: #F59E0B;
+  --chart-4: #6366F1;
+  --chart-5: #E11D48;
+  --chart-6: #F97316;
   --gradient-start: #F5F0EB;
   --gradient-end: #EDE8E2;
 }
@@ -44,6 +50,12 @@
   --chart-positive: #2DD4BF;
   --chart-negative: #FB7185;
   --chart-neutral: #64748B;
+  --chart-1: #2DD4BF;
+  --chart-2: #14B8A6;
+  --chart-3: #FBBF24;
+  --chart-4: #818CF8;
+  --chart-5: #FB7185;
+  --chart-6: #FB923C;
   --gradient-start: #0C0A09;
   --gradient-end: #1C1917;
 }

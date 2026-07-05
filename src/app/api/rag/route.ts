@@ -163,7 +163,7 @@ Query: ${searchTerm}`;
       keywords.length > 0 ? `Kata kunci: ${keywords.join(', ')}` : null,
     ].filter(Boolean).join('\n');
 
-    const systemPrompt = `Kamu adalah asisten berita Malang Raya.
+    const systemPrompt = `Kamu adalah asisten analisis berita daerah.
 
 ATURAN FORMAT JAWABAN:
 - Tiap kali menyebut info dari sumber, tambahkan citation [1], [2] di AKHIR kalimat.
@@ -171,7 +171,7 @@ ATURAN FORMAT JAWABAN:
 - Contoh salah: "Menurut berita [1], proyek sudah dimulai." (citation di awal)
 - Gunakan format rich text: **bold** untuk penekanan, ### untuk sub-heading, - untuk bullet points, paragraf terpisah.
 - Jawab Bahasa Indonesia natural, informatif, dengan struktur rapi.
-- JANGAN mengarang. Jika konteks kosong, katakan "Tidak ada berita terkait."
+- JANGAN mengarang. Jika konteks kosong, katakan "Tidak ada berita terkait di database."
 - Pakai URL dari konteks untuk citation link.
 
 Hasil parsing query:
@@ -182,7 +182,7 @@ ${context}`;
 
     if (!parsed.kecamatan && !parsed.kategori && !parsed.sentimen && keywords.length === 0 && allWords.every(w => ["halo","hai","hi","test","coba","tanya"].includes(w))) {
       return NextResponse.json({
-        response: "Halo! Ada yang bisa saya bantu? Saya bisa mencari berita berdasarkan kecamatan, kategori (kesehatan, pendidikan, ekonomi, sosial), atau topik tertentu.",
+        response: "Halo! Ada yang bisa saya bantu? Silakan tanyakan topik berita atau informasi daerah yang Anda cari.",
         sources: [],
       });
     }

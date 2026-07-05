@@ -15,7 +15,7 @@ const STORAGE_PREFIX = "llm_provider_";
 
 export default function LLMPage() {
   const [messages, setMessages] = useState<{ role: string; content: string; sources?: any[] }[]>([
-    { role: "assistant", content: "Halo! Pilih provider LLM, masukkan API Key, lalu tanya tentang berita Malang Raya." },
+    { role: "assistant", content: "Halo! Pilih provider LLM, masukkan API Key, lalu tanyakan topik berita yang Anda cari." },
   ]);
   const [input, setInput] = useState("");
   const [provider, setProvider] = useState("gemini");
@@ -76,7 +76,7 @@ export default function LLMPage() {
     <div className="flex flex-col h-[calc(100vh-9rem)]">
       <div className="mb-4">
         <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>RAG Chat</h2>
-        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Multi-provider LLM + database berita Malang Raya</p>
+        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Multi-provider LLM + database berita daerah</p>
       </div>
 
       {/* Provider + API Key */}

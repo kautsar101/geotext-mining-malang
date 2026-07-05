@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
-import { LayoutDashboard, Map, BarChart3, Newspaper, MessageSquare, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
+import { LayoutGrid, Map, BarChart3, Newspaper, MessageSquare, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 const NAV_ITEMS = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/" },
+  { label: "Dashboard", icon: LayoutGrid, href: "/" },
   { label: "Peta Spasial", icon: Map, href: "/map" },
   { label: "Analisis Sentimen", icon: BarChart3, href: "/sentiment" },
   { label: "List Berita", icon: Newspaper, href: "/news" },
@@ -22,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     const saved = localStorage.getItem("theme");
-    if (saved === "dark" || (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+    if (saved === "dark") {
       setDark(true);
       document.documentElement.classList.add("dark");
     }
