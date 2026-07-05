@@ -13,8 +13,6 @@ import {
 } from "lucide-react";
 
 const API = "/api/db?table=clean_news_articles";
-const CHARTS = ["#B45309", "#047857", "#0369A1", "#7C3AED", "#BE185D", "#D97706", "#059669"];
-
 function fetcher(params: string) {
   return fetch(`${API}&${params}`).then(r => r.json()).then(d => d.data || []);
 }
@@ -119,7 +117,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>Overview</h2>
-          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Malang Raya News Intelligence</p>
+          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Geotext Mining Malang</p>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
           style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}>
@@ -188,9 +186,7 @@ export default function Dashboard() {
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} width={90} />
               <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }}
                 formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                {sourceData.map((_, i) => <Cell key={i} fill={CHARTS[i % CHARTS.length]} />)}
-              </Bar>
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="var(--chart-primary)" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -201,7 +197,7 @@ export default function Dashboard() {
               <Pie data={categoryData} cx="50%" cy="50%" innerRadius={70} outerRadius={110}
                 paddingAngle={4} dataKey="value"
                 label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                {categoryData.map((_, i) => <Cell key={i} fill={CHARTS[i % CHARTS.length]} />)}
+                {categoryData.map((_, i) => <Cell key={i} fill={["var(--chart-primary)", "var(--chart-secondary)", "var(--chart-tertiary)", "var(--chart-muted)"][i % 4]} />)}
               </Pie>
               <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
                 contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12 }} />
@@ -220,9 +216,7 @@ export default function Dashboard() {
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} width={80} />
               <Tooltip formatter={(v: any) => [v.toLocaleString(), "Berita"] as [string, string]}
                 contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12 }} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                {kecData.map((_, i) => <Cell key={i} fill={CHARTS[i % CHARTS.length]} />)}
-              </Bar>
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="var(--chart-primary)" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -271,9 +265,7 @@ export default function Dashboard() {
               <YAxis hide />
               <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
                 contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12 }} />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {dayData.map((_, i) => <Cell key={i} fill={CHARTS[i % CHARTS.length]} />)}
-              </Bar>
+              <Bar dataKey="value" radius={[4, 4, 0, 0]} fill="var(--chart-primary)" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -285,9 +277,7 @@ export default function Dashboard() {
               <XAxis type="number" tick={{ fontSize: 10, fill: "var(--text-muted)" }} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "var(--text-secondary)" }} width={80} />
               <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12 }} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                {categoryData.map((_, i) => <Cell key={i} fill={CHARTS[i % CHARTS.length]} />)}
-              </Bar>
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="var(--chart-primary)" />
             </BarChart>
           </ResponsiveContainer>
         </div>

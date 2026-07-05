@@ -43,9 +43,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             className={`flex-shrink-0 flex flex-col transition-all duration-300 ${collapsed ? "w-20" : "w-64"}`}>
             <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
               {!collapsed && (
-                <h1 className="text-lg font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
-                  Malang<span style={{ color: "var(--accent)" }}>News</span>
-                </h1>
+                <div>
+                  <h1 className="text-lg font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
+                    Geotext<span style={{ color: "var(--accent)" }}> Mining</span>
+                  </h1>
+                  <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>Malang</p>
+                </div>
               )}
               <button onClick={() => setCollapsed(!collapsed)}
                 className="p-1.5 rounded-lg transition-colors"

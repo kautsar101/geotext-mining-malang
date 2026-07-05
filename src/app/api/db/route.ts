@@ -36,6 +36,8 @@ export async function GET(request: NextRequest) {
         else if (op === 'ilike') query = query.ilike(col, val);
         else if (op === 'is') query = query.is(col, val === 'null' ? null : val);
         else if (op === 'not.is') query = query.not(col, 'is', val === 'null' ? null : val);
+        else if (op === 'gte') query = query.gte(col, val);
+        else if (op === 'lte') query = query.lte(col, val);
       }
     }
 
