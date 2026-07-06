@@ -159,15 +159,24 @@ function validateSQL(sql: string): boolean {
 // Eksekusi agregasi ke Supabase via client methods
 // Parse SQL sederhana jadi panggilan Supabase langsung
 async function executeSQL(sql: string): Promise<{ data: Record<string, any>[]; meta: string }> {
+  // Parse WHERE clause: split by AND, handle LOWER(), use ilike for case-insensitive
   function parseWhereToFilters(q: any, whereClause: string): any {
-    const conds = whereClause.match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/gi) || [];
-    for (const c of conds) {
-      const m = c.match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
+    // Split by AND first
+    const parts = whereClause.split(/\s+AND\s+/i);
+    for (const part of parts) {
+      // Match: (LOWER(col)) = 'value'
+      const m = part.match(/(LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
       if (m) {
-        const col = m[1];
-        let val: string | null = m[2];
+        const hasLower = !!m[1];
+        const col = m[2];
+        let val: string | null = m[3];
         if (val === 'null') { q = q.is(col, null); continue; }
-        q = q.eq(col, val);
+        if (hasLower) {
+          // LOWER() was used in SQL — do case-insensitive match
+          q = q.ilike(col, val);
+        } else {
+          q = q.eq(col, val);
+        }
       }
     }
     return q;
