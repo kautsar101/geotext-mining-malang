@@ -10,7 +10,7 @@ const KECAMATAN_STR = "Ampelgading, Bantur, Bululawang, Dampit, Dau, Donomulyo, 
 
 const PROVIDERS: Record<string, { api: string; model: string; openaiCompat: boolean; needsKey: boolean }> = {
   gemini: { api: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.0-flash', openaiCompat: true, needsKey: true },
-  groq: { api: 'https://api.groq.com/openai/v1/chat/completions', model: 'mixtral-8x7b-32768', openaiCompat: true, needsKey: true },
+  groq: { api: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', openaiCompat: true, needsKey: true },
   deepseek: { api: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-chat', openaiCompat: true, needsKey: true },
   openai: { api: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini', openaiCompat: true, needsKey: true },
   claude: { api: 'https://api.anthropic.com/v1/messages', model: 'claude-3-haiku-20240307', openaiCompat: false, needsKey: true },
@@ -159,30 +159,34 @@ function validateSQL(sql: string): boolean {
 // Eksekusi agregasi ke Supabase via client methods
 // Parse SQL sederhana jadi panggilan Supabase langsung
 async function executeSQL(sql: string): Promise<{ data: Record<string, any>[]; meta: string }> {
-  // Simple COUNT with WHERE
+  function parseWhereToFilters(q: any, whereClause: string): any {
+    const conds = whereClause.match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/gi) || [];
+    for (const c of conds) {
+      const m = c.match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
+      if (m) {
+        const col = m[1];
+        let val: string | null = m[2];
+        if (val === 'null') { q = q.is(col, null); continue; }
+        q = q.eq(col, val);
+      }
+    }
+    return q;
+  }
+
+  // Simple COUNT with WHERE (supports LOWER())
   const countMatch = sql.match(/SELECT\s+COUNT\(\*\)(?:\s+as\s+\w+)?\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+))?/i);
   if (countMatch) {
     let q = supabase.from('clean_news_articles').select('*', { count: 'exact', head: true });
-    if (countMatch[1]) {
-      const conds = countMatch[1].match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/gi) || [];
-      for (const c of conds) {
-        const m = c.match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
-        if (m) {
-          const val = m[2].toLowerCase();
-          if (val === 'null') { q = q.is(m[1], null); }
-          else { q = q.eq(m[1], val); }
-        }
-      }
-    }
+    if (countMatch[1]) q = parseWhereToFilters(q, countMatch[1]);
     const { count } = await q;
     return { data: [{ count: count || 0 }], meta: 'count' };
   }
 
   // GROUP BY COUNT (e.g. SELECT category, COUNT(*) as total FROM clean_news_articles GROUP BY ...)
-  const groupMatch = sql.match(/SELECT\s+(\w+),\s*COUNT\(\*\)\s+as\s+(\w+)\s+FROM\s+clean_news_articles\s+GROUP\s+BY\s+\1\s+ORDER\s+BY\s+\2\s+DESC/i);
+  const groupMatch = sql.match(/SELECT\s+(LOWER\()?(\w+)(?:\))?,\s*COUNT\(\*\)\s+as\s+(\w+)\s+FROM\s+clean_news_articles\s+GROUP\s+BY\s+\2(?:\s+ORDER\s+BY\s+\3\s+DESC)?/i);
   if (groupMatch) {
-    const col = groupMatch[1];
-    const alias = groupMatch[2];
+    const col = groupMatch[1] ? groupMatch[2] : groupMatch[2];
+    const alias = groupMatch[3];
     const { data } = await supabase.from('clean_news_articles').select(col);
     if (data) {
       const counts: Record<string, number> = {};
@@ -202,26 +206,13 @@ async function executeSQL(sql: string): Promise<{ data: Record<string, any>[]; m
   if (selectMatch) {
     const fields = selectMatch[1].split(',').map(f => f.trim());
     let q = supabase.from('clean_news_articles').select(fields.join(','), { count: 'exact', head: false });
-    if (selectMatch[2]) {
-      const conds = selectMatch[2].match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/gi) || [];
-      for (const c of conds) {
-        const m = c.match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
-        if (m) {
-          const val = m[2].toLowerCase();
-          if (val === 'null') { q = q.is(m[1], null); }
-          else { q = q.eq(m[1], val); }
-        }
-      }
-    }
-    // Add order
+    if (selectMatch[2]) q = parseWhereToFilters(q, selectMatch[2]);
     if (selectMatch[3]) {
       const [orderCol, orderDir] = selectMatch[3].trim().split(/\s+/);
       q = q.order(orderCol, { ascending: (orderDir || '').toUpperCase() !== 'DESC' });
     }
-    // Limit
     const lim = parseInt(selectMatch[4] || '100');
     q = q.limit(Math.min(lim, 100));
-
     const { data } = await q;
     return { data: data || [], meta: 'select' };
   }
