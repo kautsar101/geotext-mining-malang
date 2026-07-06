@@ -147,6 +147,11 @@ export default function LLMPage() {
         </div>
       </div>
 
+      <div className="text-[10px] px-3 py-1.5 rounded-lg mb-3 flex items-center gap-1.5"
+        style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-muted)" }}>
+        <span className="flex-shrink-0">⚠️</span>
+        Jawaban AI dapat mengandung kesalahan. Harap cross-check dengan sumber berita asli melalui link yang tersedia.
+      </div>
       <div className="flex-1 rounded-xl overflow-hidden flex flex-col shadow-sm border"
         style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
 
