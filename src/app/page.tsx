@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Area, AreaChart, Legend
+  PieChart, Pie, Cell, Legend, LineChart, Line, Area, AreaChart, Brush
 } from "recharts";
 import {
   Newspaper, MapPin, Hash, TrendingUp,
@@ -38,6 +38,12 @@ function fmtDate(d: string) {
   return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}`;
 }
 
+function fmtDateFull(d: string) {
+  const date = new Date(d);
+  const months = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+  return `${String(date.getDate()).padStart(2,'0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -50,7 +56,6 @@ export default function Dashboard() {
   const [stats, setStats] = useState<any>({});
   const [categoryData, setCategoryData] = useState<any[]>([]);
   const [kecData, setKecData] = useState<any[]>([]);
-  const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [sentimentData, setSentimentData] = useState<any[]>([]);
   const [dailyData, setDailyData] = useState<any[]>([]);
   const [latestNews, setLatestNews] = useState<any[]>([]);
@@ -89,17 +94,16 @@ export default function Dashboard() {
       });
 
       setCategoryData(Object.entries(catMap).map(([name, value]) => ({ name, value })));
-      setSourceData(Object.entries(srcMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
-      setKecData(Object.entries(kecMap).sort((a, b) => b[1] - a[1]).slice(0, 7).map(([name, value]) => ({ name, value })));
+      setKecData(Object.entries(kecMap).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value })));
+      setSourceData(Object.entries(srcMap).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value })));
       setSentimentData(
         ["positive", "neutral", "negative"]
           .map(name => ({ name, value: sentMap[name] || 0 }))
           .filter(d => d.value > 0)
       );
 
-      // Daily data (scrollable)
       const sorted = Object.entries(dayCnt).sort(([a], [b]) => a.localeCompare(b));
-      setDailyData(sorted.map(([date, value]) => ({ date: fmtDate(date), value })));
+      setDailyData(sorted.map(([date, value]) => ({ date: fmtDate(date), value, fullDate: fmtDateFull(date), rawDate: date })));
 
       const pos = sentMap.positive || 0;
       const totalSent = pos + (sentMap.neutral || 0) + (sentMap.negative || 0);
@@ -130,7 +134,28 @@ export default function Dashboard() {
   const pRatio = stats.posRatio || 0;
   const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 };
   const SENT_COLORS = [cc.c2, cc.c6, cc.c5];
-  const chartBarSize = dailyData.length > 60 ? 20 : 30;
+const CAT_COLORS: Record<string, string> = {
+  ekonomi: "text-blue-600 bg-blue-50", sosial: "text-purple-600 bg-purple-50",
+  kesehatan: "text-teal-600 bg-teal-50", pendidikan: "text-indigo-600 bg-indigo-50",
+};
+const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kesehatan: "🏥", pendidikan: "📚" };
+
+  const lineChartId = "dailyTrendGrad";
+
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const d = payload[0].payload;
+      return (
+        <div className="rounded-xl px-4 py-3 shadow-lg text-sm" style={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}` }}>
+          <p className="font-semibold" style={{ color: "var(--text-primary)" }}>{d.fullDate}</p>
+          <p className="text-lg font-bold mt-1" style={{ color: cc.c2 }}>
+            {d.value.toLocaleString()} <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>berita</span>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="space-y-6">
@@ -205,12 +230,24 @@ export default function Dashboard() {
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen</h3>
           <ResponsiveContainer width="100%" height={320}>
             <PieChart>
-              <Pie data={sentimentData} cx="50%" cy="50%" innerRadius={70} outerRadius={110}
+              <Pie data={sentimentData} cx="50%" cy="50%" innerRadius={75} outerRadius={115}
                 paddingAngle={4} dataKey="value"
-                label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                label={({ name, value, percent }: any) => `${name}: ${value.toLocaleString()} (${(percent * 100).toFixed(0)}%)`}
+                labelLine={{ stroke: cc.tm, strokeWidth: 0.5, strokeDasharray: "2 2" }}>
                 {sentimentData.map((_, i) => <Cell key={i} fill={SENT_COLORS[i % SENT_COLORS.length]} />)}
               </Pie>
-              <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
+              <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
+                <tspan x="50%" dy="-0.4em" fontSize={22} fontWeight={700} fill={cc.ts}>
+                  {sentimentData.reduce((s, d) => s + d.value, 0).toLocaleString()}
+                </tspan>
+                <tspan x="50%" dy="1.4em" fontSize={11} fill={cc.tm}>Total</tspan>
+              </text>
+              <Tooltip
+                formatter={(v: any, name: any) => {
+                  const total = sentimentData.reduce((s, d) => s + d.value, 0);
+                  const pct = total > 0 ? ((v / total) * 100).toFixed(1) : "0";
+                  return [`${v.toLocaleString()} artikel (${pct}%)`, name] as [string, string];
+                }}
                 contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
               <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 12 }}>{v}</span>} />
             </PieChart>
@@ -260,7 +297,15 @@ export default function Dashboard() {
                     <span className="line-clamp-2">{(n.content_clean || "").slice(0, 120)}</span>
                   </td>
                   <td className="py-2 px-2 text-[10px] hidden sm:table-cell">{n.source}</td>
-                  <td className="py-2 px-2 text-[10px] hidden sm:table-cell">{n.category || "—"}</td>
+                  <td className="py-2 px-2 hidden sm:table-cell">
+                    {n.category && CAT_COLORS[n.category] ? (
+                      <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${CAT_COLORS[n.category]}`}>
+                        {CAT_ICONS[n.category] || ""} {n.category}
+                      </span>
+                    ) : (
+                      <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>—</span>
+                    )}
+                  </td>
                   <td className="py-2 px-2 text-center">
                     <span className={`inline-block text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
                       n.sentiment === "positive" ? "bg-emerald-200 text-emerald-900" :
@@ -278,80 +323,106 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Row 2: 3 charts — ganti Per Hari jadi Daily Trend scrollable */}
-      <div className="grid grid-cols-3 gap-4">
-        <div style={cardStyle}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Top Kecamatan</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={kecData} layout="vertical" margin={{ left: 10, right: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 10, fill: cc.tm }} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: cc.ts }} width={70} />
-              <Tooltip formatter={(v: any) => [v.toLocaleString(), "Berita"] as [string, string]}
-                contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={cc.primary} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={cardStyle}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Tren Publikasi</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={monthlyData}>
-              <defs><linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={cc.c1} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={cc.c1} stopOpacity={0} />
-              </linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} />
-              <XAxis dataKey="month" tick={{ fontSize: 9, fill: cc.tm }} />
-              <YAxis tick={{ fontSize: 10, fill: cc.tm }} />
-              <Tooltip formatter={(v: any) => [v.toLocaleString(), "Berita"] as [string, string]}
-                contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
-              <Area type="monotone" dataKey="berita" stroke={cc.c1} fill="url(#trendGrad)" strokeWidth={3} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={cardStyle}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Tren Harian</h3>
-          <div className="overflow-x-auto" style={{ height: 260 }}>
-            <ResponsiveContainer width={Math.max(300, dailyData.length * chartBarSize)} height="100%">
-              <BarChart data={dailyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 8, fill: cc.tm }} />
-                <YAxis hide />
-                <Tooltip formatter={(v: any) => [v.toLocaleString(), "Publikasi"] as [string, string]}
+      {/* Row 2: Top Kecamatan (2/7) + Tren Berita Harian (5/7) with Brush */}
+      <div className="grid grid-cols-7 gap-4">
+        <div className="col-span-2" style={cardStyle}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Kecamatan</h3>
+          <div style={{ height: 400, overflowY: "auto" }}>
+            <ResponsiveContainer width="100%" height={Math.max(400, kecData.length * 28)}>
+              <BarChart data={kecData} layout="vertical" margin={{ left: 10, right: 10 }} barSize={14}>
+                <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 9, fill: cc.tm }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 8, fill: cc.ts }} width={75} />
+                <Tooltip formatter={(v: any) => [v.toLocaleString(), "Berita"] as [string, string]}
                   contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-                <Bar dataKey="value" radius={[2, 2, 0, 0]} fill={cc.c2} />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.primary} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
+
+        <div className="col-span-5" style={cardStyle}>
+          <div className="flex items-start justify-between mb-4">
+            <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+              Tren Berita Harian
+            </h3>
+            <span className="text-[9px] px-2 py-1 rounded-md flex-shrink-0" style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-muted)" }}>
+              Data diupdate tiap hari jam 3 malam WIB
+            </span>
+          </div>
+          <div style={{ height: 400 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={dailyData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
+                <defs>
+                  <linearGradient id={lineChartId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={cc.c2} stopOpacity={0.25} />
+                    <stop offset="95%" stopColor={cc.c2} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} interval="preserveStartEnd" minTickGap={30} />
+                <YAxis tick={{ fontSize: 10, fill: cc.tm }} axisLine={false} tickLine={false} width={35} />
+                <Tooltip content={<CustomTooltip />} cursor={{ stroke: cc.tm, strokeDasharray: "3 3" }} />
+                <Area type="monotone" dataKey="value" stroke="none" fill={`url(#${lineChartId})`} isAnimationActive={false} />
+                <Line type="monotone" dataKey="value" stroke={cc.c2} strokeWidth={2.5} dot={false}
+                  activeDot={{ r: 5, fill: cc.bg, stroke: cc.c2, strokeWidth: 3 }} isAnimationActive={false} />
+                <Brush dataKey="date" height={28} stroke={cc.tm} fill={cc.bg} travellerWidth={10} gap={1} style={{ color: cc.ts, fontSize: 9 }}>
+                  <AreaChart data={dailyData}>
+                    <Area type="monotone" dataKey="value" stroke={cc.c2} fill={cc.c2 + "30"} isAnimationActive={false} />
+                  </AreaChart>
+                </Brush>
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex items-center justify-between mt-2 px-1">
+            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              <span className="opacity-50">{dailyData.length} hari total</span>
+            </span>
+            <span className="text-[10px] font-medium" style={{ color: cc.c2 }}>
+              {dailyData.reduce((sum, d) => sum + d.value, 0).toLocaleString()} total berita
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Bottom row: Top Sources + Pie Sumber */}
+      {/* Bottom row: Sumber Berita (scrollable) + Pie Sumber */}
       <div className="grid grid-cols-2 gap-4">
         <div style={cardStyle}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Top 5 Sumber Berita</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={sourceData} layout="vertical" margin={{ left: 10, right: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 10, fill: cc.tm }} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: cc.ts }} width={90} />
-              <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
-                contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={cc.secondary} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sumber Berita</h3>
+          <div style={{ height: 300, overflowY: "auto" }}>
+            <ResponsiveContainer width="100%" height={Math.max(300, sourceData.length * 26)}>
+              <BarChart data={sourceData} layout="vertical" margin={{ left: 10, right: 20 }} barSize={12}>
+                <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 9, fill: cc.tm }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 8, fill: cc.ts }} width={90} />
+                <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
+                  contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.secondary} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Proporsi Sumber Berita</h3>
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={300}>
             <PieChart>
-              <Pie data={sourceData} cx="50%" cy="50%" innerRadius={40} outerRadius={80}
+              <Pie data={sourceData} cx="50%" cy="50%" innerRadius={45} outerRadius={85}
                 paddingAngle={3} dataKey="value"
-                label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                {sourceData.map((_, i) => <Cell key={i} fill={[cc.c2, cc.c3, cc.c4, cc.c5, cc.c6][i % 5]} />)}
+                label={({ name, value, percent }: any) => `${name}: ${value.toLocaleString()} (${(percent * 100).toFixed(0)}%)`}
+                labelLine={{ stroke: cc.tm, strokeWidth: 0.5, strokeDasharray: "2 2" }}>
+                {sourceData.map((_, i) => <Cell key={i} fill={[cc.c2, cc.c3, cc.c4, cc.c5, cc.c6, cc.tm][i % 6]} />)}
               </Pie>
-              <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
+              <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
+                <tspan x="50%" dy="-0.4em" fontSize={18} fontWeight={700} fill={cc.ts}>
+                  {sourceData.reduce((s, d) => s + d.value, 0).toLocaleString()}
+                </tspan>
+                <tspan x="50%" dy="1.4em" fontSize={10} fill={cc.tm}>Total</tspan>
+              </text>
+              <Tooltip formatter={(v: any, name: any) => {
+                  const total = sourceData.reduce((s, d) => s + d.value, 0);
+                  const pct = total > 0 ? ((v / total) * 100).toFixed(1) : "0";
+                  return [`${v.toLocaleString()} artikel (${pct}%)`, name] as [string, string];
+                }}
                 contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
               <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 11 }}>{v}</span>} />
             </PieChart>
