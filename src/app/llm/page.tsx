@@ -1,23 +1,30 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Key, Bot, Sparkles } from "lucide-react";
+import { Send, Key, Bot, ExternalLink } from "lucide-react";
 import InlineContent from "@/components/InlineContent";
 
+const KEY_LINKS: Record<string, string> = {
+  groq: "https://console.groq.com/keys",
+  gemini: "https://aistudio.google.com/apikey",
+  deepseek: "https://platform.deepseek.com/api_keys",
+  openai: "https://platform.openai.com/api-keys",
+  claude: "https://console.anthropic.com/",
+};
+
 const PROVIDERS = [
-  { id: "groq", label: "Groq (Mixtral 8x7B)", keyPrefix: "gsk_", free: false, desc: "Gratis — daftar di console.groq.com" },
-  { id: "gemini", label: "Gemini 2.0 Flash", keyPrefix: "AIza", free: false, desc: "Butuh API Key" },
-  { id: "deepseek", label: "DeepSeek V4 Flash", keyPrefix: "sk-", free: false, desc: "Butuh API Key" },
-  { id: "openai", label: "OpenAI GPT-4o Mini", keyPrefix: "sk-", free: false, desc: "Butuh API Key" },
-  { id: "claude", label: "Claude 3 Haiku", keyPrefix: "sk-ant-", free: false, desc: "Butuh API Key" },
-  { id: "ollama", label: "Ollama (Llama 3.2)", keyPrefix: null, free: true, desc: "Gratis – lokal" },
+  { id: "groq", label: "Groq (Mixtral 8x7B)", keyPrefix: "gsk_", desc: "Gratis — daftar di console.groq.com" },
+  { id: "gemini", label: "Gemini 2.0 Flash", keyPrefix: "AIza", desc: "Butuh API Key" },
+  { id: "deepseek", label: "DeepSeek V4 Flash", keyPrefix: "sk-", desc: "Butuh API Key" },
+  { id: "openai", label: "OpenAI GPT-4o Mini", keyPrefix: "sk-", desc: "Butuh API Key" },
+  { id: "claude", label: "Claude 3 Haiku", keyPrefix: "sk-ant-", desc: "Butuh API Key" },
 ];
 
 const STORAGE_PREFIX = "llm_provider_";
 
 export default function LLMPage() {
   const [messages, setMessages] = useState<{ role: string; content: string; sources?: any[] }[]>([
-    { role: "assistant", content: "Halo! Pilih provider LLM. **Ollama** gratis & jalan lokal, yang lain butuh API Key. Lalu tanyakan topik berita yang Anda cari." },
+    { role: "assistant", content: "Halo! Pilih provider LLM, masukkan API Key, lalu tanyakan topik berita yang Anda cari." },
   ]);
   const [input, setInput] = useState("");
   const [provider, setProvider] = useState("groq");
@@ -43,11 +50,8 @@ export default function LLMPage() {
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
-
-    // Skip API key check for Ollama
-    const currentProvider = PROVIDERS.find(p => p.id === provider);
-    if (!currentProvider?.free && !apiKey.trim()) {
-      setMessages(prev => [...prev, { role: "assistant", content: `Silakan masukkan API Key untuk ${currentProvider?.label}.` }]);
+    if (!apiKey.trim()) {
+      setMessages(prev => [...prev, { role: "assistant", content: `Silakan masukkan API Key untuk ${PROVIDERS.find(p => p.id === provider)?.label}.` }]);
       return;
     }
 
@@ -78,7 +82,6 @@ export default function LLMPage() {
   };
 
   const currentProvider = PROVIDERS.find(p => p.id === provider);
-  const isFree = currentProvider?.free;
 
   return (
     <div className="flex flex-col h-[calc(100vh-9rem)]">
@@ -96,39 +99,36 @@ export default function LLMPage() {
             style={{ color: "var(--text-primary)" }}>
             {PROVIDERS.map(p => (
               <option key={p.id} value={p.id}>
-                {p.label} {p.free ? "🔓" : "🔑"}
+                {p.label} 🔑
               </option>
             ))}
           </select>
-          {isFree && (
-            <span className="text-[10px] font-semibold flex items-center gap-1 px-2 py-1 rounded-full"
-              style={{ backgroundColor: "#D1FAE5", color: "#065F46" }}>
-              <Sparkles size={10} />Gratis
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-2 px-1">
           <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
             {currentProvider?.desc}
           </span>
+          <a href={KEY_LINKS[provider]} target="_blank" rel="noopener noreferrer"
+            className="text-[10px] opacity-50 hover:opacity-100 transition-opacity flex items-center gap-0.5"
+            style={{ color: "var(--accent)" }}>
+            Dapatkan API Key <ExternalLink size={10} />
+          </a>
         </div>
-        {!isFree && (
-          <div className="flex items-center gap-3">
-            <Key size={16} style={{ color: "var(--text-muted)" }} />
-            <input
-              type={showKey ? "text" : "password"}
-              value={apiKey}
-              onChange={e => saveKey(e.target.value)}
-              placeholder={currentProvider?.keyPrefix + "xxxxxxxxxxxx"}
-              className="flex-1 text-xs font-mono bg-transparent border-none outline-none"
-              style={{ color: "var(--text-primary)" }}
-            />
-            <button onClick={() => setShowKey(!showKey)} className="text-xs px-2 py-1 rounded flex-shrink-0"
-              style={{ color: "var(--text-muted)", backgroundColor: "var(--bg-primary)" }}>
-              {showKey ? "Sembunyi" : "Lihat"}
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <Key size={16} style={{ color: "var(--text-muted)" }} />
+          <input
+            type={showKey ? "text" : "password"}
+            value={apiKey}
+            onChange={e => saveKey(e.target.value)}
+            placeholder={currentProvider?.keyPrefix + "xxxxxxxxxxxx"}
+            className="flex-1 text-xs font-mono bg-transparent border-none outline-none"
+            style={{ color: "var(--text-primary)" }}
+          />
+          <button onClick={() => setShowKey(!showKey)} className="text-xs px-2 py-1 rounded flex-shrink-0"
+            style={{ color: "var(--text-muted)", backgroundColor: "var(--bg-primary)" }}>
+            {showKey ? "Sembunyi" : "Lihat"}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 rounded-xl overflow-hidden flex flex-col shadow-sm border"
