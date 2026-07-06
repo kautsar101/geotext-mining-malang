@@ -1,24 +1,26 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Key, Bot } from "lucide-react";
+import { Send, Key, Bot, Sparkles } from "lucide-react";
 import InlineContent from "@/components/InlineContent";
 
 const PROVIDERS = [
-  { id: "gemini", label: "Gemini 2.0 Flash", keyPrefix: "AIza" },
-  { id: "deepseek", label: "DeepSeek V4 Flash", keyPrefix: "sk-" },
-  { id: "openai", label: "OpenAI GPT-4o Mini", keyPrefix: "sk-" },
-  { id: "claude", label: "Claude 3 Haiku", keyPrefix: "sk-ant-" },
+  { id: "ollama", label: "Ollama (Llama 3.2)", keyPrefix: null, free: true, desc: "Gratis – lokal" },
+  { id: "gemini", label: "Gemini 2.0 Flash", keyPrefix: "AIza", free: false, desc: "Butuh API Key" },
+  { id: "groq", label: "Groq (Mixtral 8x7B)", keyPrefix: "gsk_", free: false, desc: "Butuh API Key" },
+  { id: "deepseek", label: "DeepSeek V4 Flash", keyPrefix: "sk-", free: false, desc: "Butuh API Key" },
+  { id: "openai", label: "OpenAI GPT-4o Mini", keyPrefix: "sk-", free: false, desc: "Butuh API Key" },
+  { id: "claude", label: "Claude 3 Haiku", keyPrefix: "sk-ant-", free: false, desc: "Butuh API Key" },
 ];
 
 const STORAGE_PREFIX = "llm_provider_";
 
 export default function LLMPage() {
   const [messages, setMessages] = useState<{ role: string; content: string; sources?: any[] }[]>([
-    { role: "assistant", content: "Halo! Pilih provider LLM, masukkan API Key, lalu tanyakan topik berita yang Anda cari." },
+    { role: "assistant", content: "Halo! Pilih provider LLM. **Ollama** gratis & jalan lokal, yang lain butuh API Key. Lalu tanyakan topik berita yang Anda cari." },
   ]);
   const [input, setInput] = useState("");
-  const [provider, setProvider] = useState("gemini");
+  const [provider, setProvider] = useState("ollama");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,8 +43,11 @@ export default function LLMPage() {
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
-    if (!apiKey.trim()) {
-      setMessages(prev => [...prev, { role: "assistant", content: `Silakan masukkan API Key untuk ${PROVIDERS.find(p => p.id === provider)?.label}.` }]);
+
+    // Skip API key check for Ollama
+    const currentProvider = PROVIDERS.find(p => p.id === provider);
+    if (!currentProvider?.free && !apiKey.trim()) {
+      setMessages(prev => [...prev, { role: "assistant", content: `Silakan masukkan API Key untuk ${currentProvider?.label}.` }]);
       return;
     }
 
@@ -72,6 +77,9 @@ export default function LLMPage() {
     setIsLoading(false);
   };
 
+  const currentProvider = PROVIDERS.find(p => p.id === provider);
+  const isFree = currentProvider?.free;
+
   return (
     <div className="flex flex-col h-[calc(100vh-9rem)]">
       <div className="mb-4">
@@ -86,24 +94,41 @@ export default function LLMPage() {
           <select value={provider} onChange={e => setProvider(e.target.value)}
             className="flex-1 text-sm font-medium bg-transparent border-none outline-none cursor-pointer"
             style={{ color: "var(--text-primary)" }}>
-            {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+            {PROVIDERS.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.label} {p.free ? "🔓" : "🔑"}
+              </option>
+            ))}
           </select>
+          {isFree && (
+            <span className="text-[10px] font-semibold flex items-center gap-1 px-2 py-1 rounded-full"
+              style={{ backgroundColor: "#D1FAE5", color: "#065F46" }}>
+              <Sparkles size={10} />Gratis
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-3">
-          <Key size={16} style={{ color: "var(--text-muted)" }} />
-          <input
-            type={showKey ? "text" : "password"}
-            value={apiKey}
-            onChange={e => saveKey(e.target.value)}
-            placeholder={PROVIDERS.find(p => p.id === provider)?.keyPrefix + "xxxxxxxxxxxx"}
-            className="flex-1 text-xs font-mono bg-transparent border-none outline-none"
-            style={{ color: "var(--text-primary)" }}
-          />
-          <button onClick={() => setShowKey(!showKey)} className="text-xs px-2 py-1 rounded flex-shrink-0"
-            style={{ color: "var(--text-muted)", backgroundColor: "var(--bg-primary)" }}>
-            {showKey ? "Sembunyi" : "Lihat"}
-          </button>
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            {currentProvider?.desc}
+          </span>
         </div>
+        {!isFree && (
+          <div className="flex items-center gap-3">
+            <Key size={16} style={{ color: "var(--text-muted)" }} />
+            <input
+              type={showKey ? "text" : "password"}
+              value={apiKey}
+              onChange={e => saveKey(e.target.value)}
+              placeholder={currentProvider?.keyPrefix + "xxxxxxxxxxxx"}
+              className="flex-1 text-xs font-mono bg-transparent border-none outline-none"
+              style={{ color: "var(--text-primary)" }}
+            />
+            <button onClick={() => setShowKey(!showKey)} className="text-xs px-2 py-1 rounded flex-shrink-0"
+              style={{ color: "var(--text-muted)", backgroundColor: "var(--bg-primary)" }}>
+              {showKey ? "Sembunyi" : "Lihat"}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 rounded-xl overflow-hidden flex flex-col shadow-sm border"
@@ -138,7 +163,7 @@ export default function LLMPage() {
           <div className="flex gap-3">
             <input type="text" value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
-              placeholder="Tanya tentang berita Malang..."
+              placeholder="Tanya tentang berita daerah..."
               className="flex-1 px-4 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2"
               style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-primary)", borderColor: "var(--border)" }} />
             <button onClick={handleSend} disabled={!input.trim() || isLoading}

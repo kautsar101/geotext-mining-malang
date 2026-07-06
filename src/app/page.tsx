@@ -20,10 +20,6 @@ function fetcherOne(params: string) {
   return fetch(`${API}&${params}`).then(r => r.json()).then(d => d);
 }
 
-function daysAgo(n: number) {
-  const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10);
-}
-
 const C = {
   c1: "#0D9488", c2: "#14B8A6", c3: "#F59E0B", c4: "#6366F1", c5: "#E11D48", c6: "#EAB308",
   primary: "#0D9488", secondary: "#14B8A6", tertiary: "#5EEAD4", muted: "#99F6E4",
@@ -35,6 +31,11 @@ function getDark() {
     primary: "#2DD4BF", secondary: "#14B8A6", tertiary: "#0D9488", muted: "#115E59",
     tm: "#78716C", ts: "#A8A29E", bd: "#44403C", bg: "#292524",
   };
+}
+
+function fmtDate(d: string) {
+  const date = new Date(d);
+  return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}`;
 }
 
 export default function Dashboard() {
@@ -51,7 +52,7 @@ export default function Dashboard() {
   const [kecData, setKecData] = useState<any[]>([]);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [sentimentData, setSentimentData] = useState<any[]>([]);
-  const [dayData, setDayData] = useState<any[]>([]);
+  const [dailyData, setDailyData] = useState<any[]>([]);
   const [latestNews, setLatestNews] = useState<any[]>([]);
   const [sourceData, setSourceData] = useState<any[]>([]);
 
@@ -70,10 +71,9 @@ export default function Dashboard() {
 
       const catMap: Record<string, number> = {};
       const kecMap: Record<string, number> = {};
-      const monthMap: Record<string, number> = {};
       const sentMap: Record<string, number> = {};
-      const dayMap: Record<string, number> = {};
       const srcMap: Record<string, number> = {};
+      const dayCnt: Record<string, number> = {};
       const uniqSrc = new Set<string>();
       const uniqKec = new Set<string>();
 
@@ -81,26 +81,25 @@ export default function Dashboard() {
         if (r.source) { srcMap[r.source] = (srcMap[r.source] || 0) + 1; uniqSrc.add(r.source); }
         const cat = r.category || "uncategorized"; catMap[cat] = (catMap[cat] || 0) + 1;
         if (r.primary_kecamatan) { kecMap[r.primary_kecamatan] = (kecMap[r.primary_kecamatan] || 0) + 1; uniqKec.add(r.primary_kecamatan); }
-        if (r.published_date) { const m = r.published_date.slice(0, 7); monthMap[m] = (monthMap[m] || 0) + 1; }
         const s = r.sentiment || "unknown"; sentMap[s] = (sentMap[s] || 0) + 1;
         if (r.published_date) {
-          const day = new Date(r.published_date).toLocaleDateString("id", { weekday: "long" });
-          dayMap[day] = (dayMap[day] || 0) + 1;
+          const d = r.published_date.slice(0, 10);
+          dayCnt[d] = (dayCnt[d] || 0) + 1;
         }
       });
 
       setCategoryData(Object.entries(catMap).map(([name, value]) => ({ name, value })));
       setSourceData(Object.entries(srcMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
       setKecData(Object.entries(kecMap).sort((a, b) => b[1] - a[1]).slice(0, 7).map(([name, value]) => ({ name, value })));
-      setMonthlyData(Object.entries(monthMap).sort(([a], [b]) => a.localeCompare(b)).map(([month, berita]) => ({ month, berita })));
       setSentimentData(
         ["positive", "neutral", "negative"]
           .map(name => ({ name, value: sentMap[name] || 0 }))
           .filter(d => d.value > 0)
       );
 
-      const order = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"];
-      setDayData(order.filter(d => dayMap[d]).map(d => ({ name: d.slice(0, 3), value: dayMap[d] })));
+      // Daily data (scrollable)
+      const sorted = Object.entries(dayCnt).sort(([a], [b]) => a.localeCompare(b));
+      setDailyData(sorted.map(([date, value]) => ({ date: fmtDate(date), value })));
 
       const pos = sentMap.positive || 0;
       const totalSent = pos + (sentMap.neutral || 0) + (sentMap.negative || 0);
@@ -131,6 +130,7 @@ export default function Dashboard() {
   const pRatio = stats.posRatio || 0;
   const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 };
   const SENT_COLORS = [cc.c2, cc.c6, cc.c5];
+  const chartBarSize = dailyData.length > 60 ? 20 : 30;
 
   return (
     <div className="space-y-6">
@@ -176,7 +176,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Metric Cards with 7d label */}
+      {/* Metric Cards */}
       <div className="grid grid-cols-4 gap-4">
         {[
           { icon: Newspaper, label: "Total Artikel", value: stats.total?.toLocaleString(), change: "7d", up: true, color: cc.c1 },
@@ -243,6 +243,7 @@ export default function Dashboard() {
                 <th className="text-left py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Judul</th>
                 <th className="text-left py-2 px-2 font-semibold hidden md:table-cell" style={{ color: "var(--text-muted)" }}>Isi</th>
                 <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Sumber</th>
+                <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Kategori</th>
                 <th className="text-center py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Sentimen</th>
                 <th className="text-right py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Tanggal</th>
               </tr>
@@ -250,15 +251,16 @@ export default function Dashboard() {
             <tbody>
               {latestNews.map((n: any, i: number) => (
                 <tr key={i} style={{ borderBottom: "1px solid var(--border)" }} className="hover:bg-black/5 transition-colors">
-                  <td className="py-2 px-2 max-w-[200px]">
+                  <td className="py-2 px-2 max-w-[180px]">
                     <a href={n.url} target="_blank" rel="noopener noreferrer"
                       className="font-medium hover:underline line-clamp-2 block"
                       style={{ color: "var(--text-primary)" }}>{n.title}</a>
                   </td>
-                  <td className="py-2 px-2 text-[10px] hidden md:table-cell max-w-[200px]" style={{ color: "var(--text-muted)" }}>
-                    <span className="line-clamp-2">{(n.content_clean || "").slice(0, 150)}</span>
+                  <td className="py-2 px-2 text-[10px] hidden md:table-cell max-w-[180px]" style={{ color: "var(--text-muted)" }}>
+                    <span className="line-clamp-2">{(n.content_clean || "").slice(0, 120)}</span>
                   </td>
                   <td className="py-2 px-2 text-[10px] hidden sm:table-cell">{n.source}</td>
+                  <td className="py-2 px-2 text-[10px] hidden sm:table-cell">{n.category || "—"}</td>
                   <td className="py-2 px-2 text-center">
                     <span className={`inline-block text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
                       n.sentiment === "positive" ? "bg-emerald-200 text-emerald-900" :
@@ -276,7 +278,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Row 2: 3 charts */}
+      {/* Row 2: 3 charts — ganti Per Hari jadi Daily Trend scrollable */}
       <div className="grid grid-cols-3 gap-4">
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Top Kecamatan</h3>
@@ -309,17 +311,19 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
         <div style={cardStyle}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Per Hari</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={dayData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 9, fill: cc.tm }} />
-              <YAxis hide />
-              <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
-                contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]} fill={cc.primary} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Tren Harian</h3>
+          <div className="overflow-x-auto" style={{ height: 260 }}>
+            <ResponsiveContainer width={Math.max(300, dailyData.length * chartBarSize)} height="100%">
+              <BarChart data={dailyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 8, fill: cc.tm }} />
+                <YAxis hide />
+                <Tooltip formatter={(v: any) => [v.toLocaleString(), "Publikasi"] as [string, string]}
+                  contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
+                <Bar dataKey="value" radius={[2, 2, 0, 0]} fill={cc.c2} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
