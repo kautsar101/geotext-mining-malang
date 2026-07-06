@@ -5,12 +5,12 @@ import { Send, Key, Bot, Sparkles } from "lucide-react";
 import InlineContent from "@/components/InlineContent";
 
 const PROVIDERS = [
-  { id: "ollama", label: "Ollama (Llama 3.2)", keyPrefix: null, free: true, desc: "Gratis – lokal" },
+  { id: "groq", label: "Groq (Mixtral 8x7B)", keyPrefix: "gsk_", free: false, desc: "Gratis — daftar di console.groq.com" },
   { id: "gemini", label: "Gemini 2.0 Flash", keyPrefix: "AIza", free: false, desc: "Butuh API Key" },
-  { id: "groq", label: "Groq (Mixtral 8x7B)", keyPrefix: "gsk_", free: false, desc: "Butuh API Key" },
   { id: "deepseek", label: "DeepSeek V4 Flash", keyPrefix: "sk-", free: false, desc: "Butuh API Key" },
   { id: "openai", label: "OpenAI GPT-4o Mini", keyPrefix: "sk-", free: false, desc: "Butuh API Key" },
   { id: "claude", label: "Claude 3 Haiku", keyPrefix: "sk-ant-", free: false, desc: "Butuh API Key" },
+  { id: "ollama", label: "Ollama (Llama 3.2)", keyPrefix: null, free: true, desc: "Gratis – lokal" },
 ];
 
 const STORAGE_PREFIX = "llm_provider_";
@@ -20,7 +20,7 @@ export default function LLMPage() {
     { role: "assistant", content: "Halo! Pilih provider LLM. **Ollama** gratis & jalan lokal, yang lain butuh API Key. Lalu tanyakan topik berita yang Anda cari." },
   ]);
   const [input, setInput] = useState("");
-  const [provider, setProvider] = useState("ollama");
+  const [provider, setProvider] = useState("groq");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
