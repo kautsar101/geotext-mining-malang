@@ -13,7 +13,7 @@ const KEY_LINKS: Record<string, string> = {
 };
 
 const PROVIDERS = [
-  { id: "groq", label: "Groq (Mixtral 8x7B)", keyPrefix: "gsk_", desc: "Gratis — daftar di console.groq.com" },
+  { id: "groq", label: "Groq (Llama 3.3 70B)", keyPrefix: "gsk_", desc: "Gratis — daftar di console.groq.com" },
   { id: "gemini", label: "Gemini 2.0 Flash", keyPrefix: "AIza", desc: "Butuh API Key" },
   { id: "deepseek", label: "DeepSeek V4 Flash", keyPrefix: "sk-", desc: "Butuh API Key" },
   { id: "openai", label: "OpenAI GPT-4o Mini", keyPrefix: "sk-", desc: "Butuh API Key" },
@@ -22,16 +22,25 @@ const PROVIDERS = [
 
 const STORAGE_PREFIX = "llm_provider_";
 
+function genSessionId(): string {
+  if (typeof window === 'undefined') return '';
+  let sid = localStorage.getItem('llm_session_id');
+  if (!sid) { sid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); localStorage.setItem('llm_session_id', sid); }
+  return sid;
+}
+
 export default function LLMPage() {
-  const [messages, setMessages] = useState<{ role: string; content: string; sources?: any[] }[]>([
+  const [messages, setMessages] = useState<{ role: string; content: string; sources?: any[]; debug?: any }[]>([
     { role: "assistant", content: "Halo! Pilih provider LLM, masukkan API Key, lalu tanyakan topik berita yang Anda cari." },
   ]);
   const [input, setInput] = useState("");
   const [provider, setProvider] = useState("groq");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const sessionId = useRef(genSessionId());
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_PREFIX + provider);
@@ -65,7 +74,7 @@ export default function LLMPage() {
 
       const res = await fetch("/api/rag", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-session-id": sessionId.current },
         body: JSON.stringify({ query: userMsg, apiKey, provider, messages: history }),
       });
       const data = await res.json();
@@ -73,7 +82,7 @@ export default function LLMPage() {
       if (data.error) {
         setMessages(prev => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
       } else {
-        setMessages(prev => [...prev, { role: "assistant", content: data.response, sources: data.sources || [] }]);
+        setMessages(prev => [...prev, { role: "assistant", content: data.response, sources: data.sources || [], debug: data.debug }]);
       }
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Gagal terhubung ke server." }]);
@@ -85,9 +94,16 @@ export default function LLMPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-9rem)]">
-      <div className="mb-4">
-        <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>RAG Chat</h2>
-        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Multi-provider LLM + database berita daerah</p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>RAG Chat</h2>
+          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Multi-provider LLM + database berita daerah</p>
+        </div>
+        <button onClick={() => setShowDebug(!showDebug)}
+          className="text-[10px] px-3 py-1.5 rounded-lg font-medium transition-colors"
+          style={{ backgroundColor: showDebug ? "var(--accent)" : "var(--bg-primary)", color: showDebug ? "#fff" : "var(--text-muted)" }}>
+          {showDebug ? "Debug ON" : "Debug"}
+        </button>
       </div>
 
       {/* Provider + API Key */}
@@ -141,6 +157,17 @@ export default function LLMPage() {
                 <div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "text-white" : ""}`}
                   style={m.role === "user" ? { backgroundColor: "var(--accent)" } : { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
                   <InlineContent text={m.content} sources={m.sources || []} />
+                  {showDebug && m.debug && m.role === "assistant" && (
+                    <div className="mt-2 pt-2 border-t text-[9px] font-mono space-y-0.5" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+                      <div>Route: <span className="font-semibold">{m.debug.route || '?'}</span></div>
+                      {m.debug.query && <div className="truncate">Query: {m.debug.query}</div>}
+                      {m.debug.sql && <div className="truncate">SQL: {m.debug.sql}</div>}
+                      {m.debug.sqlResult && <div>Hasil: {JSON.stringify(m.debug.sqlResult).slice(0, 120)}</div>}
+                      {m.debug.parsed && <div>Parsed: {JSON.stringify(m.debug.parsed)}</div>}
+                      {m.debug.sourcesCount !== undefined && <div>Sumber: {m.debug.sourcesCount}</div>}
+                      {m.debug.searchInfo && <div className="truncate">{m.debug.searchInfo}</div>}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
