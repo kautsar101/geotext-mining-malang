@@ -9,7 +9,6 @@ const supabase = createClient(
 const KECAMATAN_STR = "Ampelgading, Bantur, Bululawang, Dampit, Dau, Donomulyo, Gedangan, Gondanglegi, Jabung, Kalipare, Karangploso, Kasembon, Kepanjen, Kromengan, Lawang, Ngajum, Ngantang, Pagak, Pagelaran, Pakis, Pakisaji, Poncokusumo, Pujon, Singosari, Sumbermanjing Wetan, Sumberpucung, Tajinan, Tirtoyudo, Tumpang, Turen, Wagir, Wajak, Wonosari";
 
 const PROVIDERS: Record<string, { api: string; model: string; openaiCompat: boolean; needsKey: boolean }> = {
-  ollama: { api: 'http://localhost:11434/v1/chat/completions', model: 'llama3.2', openaiCompat: true, needsKey: false },
   gemini: { api: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.0-flash', openaiCompat: true, needsKey: true },
   groq: { api: 'https://api.groq.com/openai/v1/chat/completions', model: 'mixtral-8x7b-32768', openaiCompat: true, needsKey: true },
   deepseek: { api: 'https://api.deepseek.com/v1/chat/completions', model: 'deepseek-chat', openaiCompat: true, needsKey: true },
@@ -63,6 +62,131 @@ async function generateEmbedding(apiKey: string, text: string): Promise<number[]
   return data.embedding?.values || [];
 }
 
+// === ROUTER: Tentukan apakah query butuh SQL atau RAG ===
+async function classifyQuery(provider: string, apiKey: string, query: string): Promise<'SQL' | 'RAG'> {
+  const prompt = `Klasifikasikan query berikut. Balas HANYA "SQL" atau "RAG" tanpa teks lain.
+
+SQL = query menanyakan JUMLAH, TOTAL, STATISTIK, AGREGASI, ANGKA, PERBANDINGAN, perhitungan data, urutan terbanyak/terkecil.
+RAG = query mencari ARTIKEL, BERITA, TOPIK, INFORMASI spesifik, rangkuman, penjelasan isi berita.
+
+Contoh SQL: "ada berapa berita positif", "total berita di Kepanjen", "berapa banyak berita ekonomi", "sebutkan kecamatan dengan berita terbanyak", "rata-rata sentimen per kategori"
+Contoh RAG: "cari berita tentang banjir", "apa isu utama di Malang", "ceritakan tentang pendidikan di Kepanjen", "berita apa yang trending hari ini"
+
+Query: ${query}`;
+  const result = await callLLM(provider, apiKey, [{ role: 'user', content: prompt }], 10, 0);
+  return result.trim().toUpperCase().includes('SQL') ? 'SQL' : 'RAG';
+}
+
+// === TEXT-TO-SQL: Generate SQL dari pertanyaan ===
+const SCHEMA_DESC = `Tabel: clean_news_articles
+Kolom:
+- id (bigint, primary key)
+- title (text): judul berita
+- source (text): nama sumber berita
+- url (text): link berita
+- category (text): kategori (ekonomi, sosial, kesehatan, pendidikan, atau NULL)
+- sentiment (text): positive, negative, neutral, atau NULL
+- primary_kecamatan (text): kecamatan di Kabupaten Malang
+- published_date (text): tanggal publikasi format YYYY-MM-DD
+- content_clean (text): isi berita`;
+
+async function generateSQL(provider: string, apiKey: string, query: string): Promise<string> {
+  const prompt = `Anda adalah generator SQL. Dari pertanyaan user, buat SQL query SELECT untuk PostgreSQL.
+
+${SCHEMA_DESC}
+
+Aturan:
+- Hanya SELECT, jangan INSERT/UPDATE/DELETE/DROP/ALTER
+- Gunakan LOWER() untuk case-insensitive comparison
+- Jika menanyakan jumlah, gunakan COUNT(*)
+- Gunakan COALESCE untuk NULL values
+- Balas HANYA SQL query dalam satu baris, tanpa markdown, tanpa kata lain
+
+Contoh:
+User: "ada berapa berita positif di Kepanjen?"
+SQL: SELECT COUNT(*) FROM clean_news_articles WHERE LOWER(sentiment)='positive' AND LOWER(primary_kecamatan)='kepanjen'
+
+User: "total berita per kategori"
+SQL: SELECT category, COUNT(*) as total FROM clean_news_articles GROUP BY category ORDER BY total DESC
+
+User: "berita paling banyak dari sumber mana"
+SQL: SELECT source, COUNT(*) as total FROM clean_news_articles GROUP BY source ORDER BY total DESC
+
+User: "kecamatan dengan berita terbanyak"
+SQL: SELECT primary_kecamatan, COUNT(*) as total FROM clean_news_articles GROUP BY primary_kecamatan ORDER BY total DESC
+
+User: "${query}"
+SQL:`;
+  const result = await callLLM(provider, apiKey, [{ role: 'user', content: prompt }], 150, 0);
+  return result.replace(/```sql|```/gi, '').trim();
+}
+
+// Validasi SQL aman untuk dieksekusi
+function validateSQL(sql: string): boolean {
+  const upper = sql.toUpperCase().trim();
+  if (!upper.startsWith('SELECT')) return false;
+  const blocked = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE', '--', '/*'];
+  // Remove string contents before checking
+  const noStrings = upper.replace(/'[^']*'/g, '');
+  for (const b of blocked) {
+    if (noStrings.includes(b)) return false;
+  }
+  return true;
+}
+
+// Eksekusi SQL ke Supabase
+async function executeSQL(sql: string): Promise<{ data: any[]; meta: string }> {
+  const { data, error } = await supabase.rpc('exec_sql', { query: sql }).maybeSingle();
+  if (!error && data !== null && data !== undefined) {
+    return { data: Array.isArray(data) ? data : [data], meta: 'sql' };
+  }
+
+  // Fallback: parse simple COUNT queries manually
+  const countMatch = sql.match(/SELECT\s+COUNT\(\*\)\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+))?/i);
+  if (countMatch) {
+    let q = supabase.from('clean_news_articles').select('*', { count: 'exact', head: true });
+    // Manually parse WHERE clause (simple cases only)
+    if (countMatch[1]) {
+      const whereClause = countMatch[1].trim();
+      const conditions = whereClause.match(/(\w+)\s*=\s*'([^']+)'/g);
+      if (conditions) {
+        for (const cond of conditions) {
+          const [, col, val] = cond.match(/(\w+)\s*=\s*'([^']+)'/) || [];
+          if (col && val) {
+            if (val === 'null' || val.toUpperCase() === 'NULL') {
+              q = q.is(col, null);
+            } else {
+              q = q.eq(col, val);
+            }
+          }
+        }
+      }
+    }
+    const { count, error: err } = await q;
+    if (!err) {
+      return { data: [{ count: count || 0 }], meta: `sql (${count} total)` };
+    }
+  }
+
+  // Last fallback — use db route
+  const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+    },
+    body: JSON.stringify({ query: sql }),
+  });
+  if (resp.ok) {
+    const d = await resp.json();
+    return { data: Array.isArray(d) ? d : [d], meta: 'sql' };
+  }
+
+  return { data: [], meta: 'gagal mengeksekusi SQL' };
+}
+
+// === PROGRESSIVE SEARCH (RAG PATH) — tanpa limit konteks ===
 async function progressiveSearch(
   queryText: string,
   apiKey: string,
@@ -81,66 +205,46 @@ async function progressiveSearch(
     });
   }
 
+  // Semantic search
   try {
     const embedding = await generateEmbedding(apiKey, queryText).catch(() => null);
     if (embedding && embedding.length > 0) {
       const { data } = await supabase.rpc('match_news_embeddings', {
-        query_embedding: embedding, match_threshold: 0.45, match_count: 10,
+        query_embedding: embedding, match_threshold: 0.4, match_count: 20,
         filter_kecamatan: filters.kecamatan || null,
         filter_kategori: filters.kategori || null,
         filter_sentimen: filters.sentimen || null,
       });
-      if (data && data.length > 0) { const items = dedup(data); allSources.push(...items); searchSteps.push(`semantic (filter)`); }
+      if (data && data.length > 0) { const items = dedup(data); allSources.push(...items); searchSteps.push(`semantic`); }
     }
   } catch {}
 
-  if (allSources.length < 3 && filters.sentimen) {
-    try {
-      const embedding = await generateEmbedding(apiKey, queryText).catch(() => null);
-      if (embedding) {
-        const { data } = await supabase.rpc('match_news_embeddings', {
-          query_embedding: embedding, match_threshold: 0.45, match_count: 10,
-          filter_kecamatan: filters.kecamatan || null, filter_kategori: filters.kategori || null, filter_sentimen: null,
-        });
-        if (data) { const items = dedup(data); allSources.push(...items); searchSteps.push('semantic (tanpa sentimen)'); }
-      }
-    } catch {}
-  }
-
-  if (allSources.length < 3 && filters.kecamatan) {
-    try {
-      const embedding = await generateEmbedding(apiKey, queryText).catch(() => null);
-      if (embedding) {
-        const { data } = await supabase.rpc('match_news_embeddings', {
-          query_embedding: embedding, match_threshold: 0.45, match_count: 10,
-          filter_kecamatan: null, filter_kategori: filters.kategori || null, filter_sentimen: null,
-        });
-        if (data) { const items = dedup(data); allSources.push(...items); searchSteps.push('semantic (semua kec.)'); }
-      }
-    } catch {}
-  }
-
+  // Keyword search — ambil lebih banyak untuk konteks
   const keywords = queryText.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-  if (allSources.length < 3 && keywords.length > 0) {
-    let q = supabase.from('clean_news_articles').select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url').limit(5);
+  if (keywords.length > 0) {
+    let q = supabase.from('clean_news_articles')
+      .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
+      .limit(20);
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
+    if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
     q = q.or(keywords.map(k => `title.ilike.%${k}%`).join(','));
     const { data: r1 } = await q;
     if (r1) { const items = dedup(r1); allSources.push(...items); searchSteps.push('keyword'); }
   }
 
+  // Fallback: tanpa filter
   if (allSources.length === 0 && keywords.length > 0) {
     const { data: r2 } = await supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
-      .or(keywords.map(k => `title.ilike.%${k}%`).join(',')).limit(5);
+      .or(keywords.map(k => `title.ilike.%${k}%`).join(',')).limit(20);
     if (r2) { const items = dedup(r2); allSources.push(...items); searchSteps.push('keyword (tanpa filter)'); }
   }
 
-  const sources = allSources.slice(0, 8).map((r: any, i: number) => ({
+  const sources = allSources.map((r: any, i: number) => ({
     id: i + 1,
     title: r.title,
-    snippet: (r.chunk_text || r.content_clean || '').slice(0, 200),
+    snippet: (r.chunk_text || r.content_clean || '').slice(0, 300),
     source: r.source,
     date: r.published_date,
     kecamatan: r.primary_kecamatan,
@@ -154,9 +258,10 @@ async function progressiveSearch(
   return { sources, searchInfo };
 }
 
+// === MAIN HANDLER ===
 export async function POST(request: NextRequest) {
   try {
-    const { query, apiKey, provider = 'ollama', messages } = await request.json();
+    const { query, apiKey, provider = 'groq', messages } = await request.json();
     if (!query || typeof query !== 'string' || !query.trim()) {
       return NextResponse.json({ error: 'Query diperlukan' }, { status: 400 });
     }
@@ -170,6 +275,46 @@ export async function POST(request: NextRequest) {
     const searchTerm = query.trim();
     const allWords = searchTerm.toLowerCase().split(/\s+/).filter(Boolean);
 
+    // === STEP 1: Router — SQL or RAG? ===
+    const route = await classifyQuery(provider, apiKey, searchTerm);
+
+    if (route === 'SQL') {
+      // === STEP 2a: SQL PATH ===
+      const sql = await generateSQL(provider, apiKey, searchTerm);
+
+      if (!validateSQL(sql)) {
+        return NextResponse.json({ response: `Query tidak valid. Coba tanya dengan cara lain.`, sources: [] });
+      }
+
+      const { data: sqlResult, meta } = await executeSQL(sql);
+
+      if (sqlResult.length === 0) {
+        return NextResponse.json({
+          response: `Tidak ada data yang ditemukan untuk query tersebut.`,
+          sources: [],
+          meta: { route: 'sql', sql },
+        });
+      }
+
+      // Format hasil SQL jadi jawaban natural
+      const formatPrompt = `Anda adalah asisten analisis berita daerah. Berikut adalah hasil query SQL dari database:
+
+Query: ${searchTerm}
+SQL: ${sql}
+Hasil: ${JSON.stringify(sqlResult, null, 2)}
+${meta}
+
+Buat jawaban natural dalam Bahasa Indonesia berdasarkan data tersebut. Jika data mengandung COUNT atau angka, sebutkan dengan jelas. Jika ada grouping, jelaskan per item.`;
+      const answer = await callLLM(provider, apiKey, [
+        { role: 'system', content: 'Jawab dengan Bahasa Indonesia natural, informatif, dan ringkas. Jangan mengarang data yang tidak ada di hasil.' },
+        { role: 'user', content: formatPrompt },
+      ], 400, 0.3);
+
+      return NextResponse.json({ response: answer, sources: [], meta: { route: 'sql', sql } });
+    }
+
+    // === STEP 2b: RAG PATH ===
+    // Parse query untuk filter
     const parsePrompt = `Anda adalah parser query. Dari query berikut, ekstrak structured data JSON SAJA tanpa teks lain.
 
 Kategori: kesehatan, pendidikan, ekonomi, sosial.
@@ -194,6 +339,7 @@ Query: ${searchTerm}`;
       kecamatan: parsed.kecamatan, kategori: parsed.kategori, sentimen: parsed.sentimen,
     });
 
+    // Konteks: semua hasil, tidak ada limit
     const context = sources.length > 0
       ? sources.map(s =>
           `[${s.id}] Judul: ${s.title}\n   Sumber: ${s.source} | URL: ${s.url} | Kecamatan: ${s.kecamatan || '-'} | Tanggal: ${s.date || '-'} | Kategori: ${s.category || '-'} | Sentimen: ${s.sentiment || '-'}${s.similarity ? ` | Relevansi: ${s.similarity}%` : ''}\n   Cuplikan: ${s.snippet}`
