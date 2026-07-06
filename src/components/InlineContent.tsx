@@ -81,13 +81,29 @@ function renderMarkdown(text: string): React.ReactNode[] {
 
 function renderInline(text: string): React.ReactNode[] {
   const elements: React.ReactNode[] = [];
-  const boldSplit = text.split(/(\*\*[^*]+\*\*)/g);
-  boldSplit.forEach((part, i) => {
-    const boldMatch = part.match(/^\*\*(.+)\*\*$/);
-    if (boldMatch) {
-      elements.push(<strong key={`b-${i}`} className="font-semibold">{boldMatch[1]}</strong>);
+  // Parse markdown links [text](url) first — before bold
+  const linkSplit = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+  linkSplit.forEach((part, i) => {
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      elements.push(
+        <a key={`l-${i}`} href={linkMatch[2]} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-0.5 underline transition-colors hover:opacity-70"
+          style={{ color: "var(--accent)" }}>
+          {linkMatch[1]}<ExternalLink size={10} />
+        </a>
+      );
     } else {
-      elements.push(<span key={`t-${i}`}>{part}</span>);
+      // Then parse bold inside non-link parts
+      const boldSplit = part.split(/(\*\*[^*]+\*\*)/g);
+      boldSplit.forEach((bp, j) => {
+        const boldMatch = bp.match(/^\*\*(.+)\*\*$/);
+        if (boldMatch) {
+          elements.push(<strong key={`b-${i}-${j}`} className="font-semibold">{boldMatch[1]}</strong>);
+        } else {
+          elements.push(<span key={`t-${i}-${j}`}>{bp}</span>);
+        }
+      });
     }
   });
   return elements;
