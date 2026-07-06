@@ -427,12 +427,17 @@ Query user:
 
 Balas HANYA JSON:`;
 
+    const VALID_KATEGORI = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'];
     let parsed: any = {};
     try {
       const parseResult = await callLLM(provider, apiKey, [{ role: 'user', content: parsePrompt }], 80, 0);
       parsed = JSON.parse(parseResult.replace(/```json|```/g, '').trim());
     } catch {
       parsed = { kecamatan: null, kategori: null, keywords: allWords.filter(w => w.length > 2), sentimen: null };
+    }
+    // Validasi: kategori harus salah satu dari daftar valid
+    if (parsed.kategori && !VALID_KATEGORI.includes(parsed.kategori.toLowerCase())) {
+      parsed.kategori = null;
     }
     dbg.parsed = parsed;
 
@@ -462,9 +467,10 @@ ATURAN FORMAT JAWABAN:
 - Contoh salah: "Menurut berita [1], kecelakaan terjadi."
 - Gunakan format rich text: **bold**, ### sub-heading, - bullet points.
 - Jawab Bahasa Indonesia natural, informatif.
-- JANGAN mengarang. Jika konteks kosong, katakan "Tidak ada berita terkait di database."
+- JANGAN MENGARANG. Hanya gunakan informasi dari konteks berita yang diberikan.
+- Jika konteks berita TIDAK ADA yang relevan dengan pertanyaan user, katakan "Tidak ada berita tentang [topik] di database."
+- JANGAN membuat judul, link, atau konten berita palsu.
 - Pakai URL dari konteks untuk citation link.
-- Jika user mencari di kecamatan tertentu tapi tidak ada, sebutkan berita serupa dari kecamatan lain.
 
 ${parseInfo ? `Hasil parsing:\n${parseInfo}\n` : ''}
 ${searchInfo}
