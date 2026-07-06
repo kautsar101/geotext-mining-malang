@@ -134,56 +134,77 @@ function validateSQL(sql: string): boolean {
   return true;
 }
 
-// Eksekusi SQL ke Supabase
-async function executeSQL(sql: string): Promise<{ data: any[]; meta: string }> {
-  const { data, error } = await supabase.rpc('exec_sql', { query: sql }).maybeSingle();
-  if (!error && data !== null && data !== undefined) {
-    return { data: Array.isArray(data) ? data : [data], meta: 'sql' };
-  }
-
-  // Fallback: parse simple COUNT queries manually
-  const countMatch = sql.match(/SELECT\s+COUNT\(\*\)\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+))?/i);
+// Eksekusi agregasi ke Supabase via client methods
+// Parse SQL sederhana jadi panggilan Supabase langsung
+async function executeSQL(sql: string): Promise<{ data: Record<string, any>[]; meta: string }> {
+  // Simple COUNT with WHERE
+  const countMatch = sql.match(/SELECT\s+COUNT\(\*\)(?:\s+as\s+\w+)?\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+))?/i);
   if (countMatch) {
     let q = supabase.from('clean_news_articles').select('*', { count: 'exact', head: true });
-    // Manually parse WHERE clause (simple cases only)
     if (countMatch[1]) {
-      const whereClause = countMatch[1].trim();
-      const conditions = whereClause.match(/(\w+)\s*=\s*'([^']+)'/g);
-      if (conditions) {
-        for (const cond of conditions) {
-          const [, col, val] = cond.match(/(\w+)\s*=\s*'([^']+)'/) || [];
-          if (col && val) {
-            if (val === 'null' || val.toUpperCase() === 'NULL') {
-              q = q.is(col, null);
-            } else {
-              q = q.eq(col, val);
-            }
-          }
+      const conds = countMatch[1].match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/gi) || [];
+      for (const c of conds) {
+        const m = c.match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
+        if (m) {
+          const val = m[2].toLowerCase();
+          if (val === 'null') { q = q.is(m[1], null); }
+          else { q = q.eq(m[1], val); }
         }
       }
     }
-    const { count, error: err } = await q;
-    if (!err) {
-      return { data: [{ count: count || 0 }], meta: `sql (${count} total)` };
+    const { count } = await q;
+    return { data: [{ count: count || 0 }], meta: 'count' };
+  }
+
+  // GROUP BY COUNT (e.g. SELECT category, COUNT(*) as total FROM clean_news_articles GROUP BY ...)
+  const groupMatch = sql.match(/SELECT\s+(\w+),\s*COUNT\(\*\)\s+as\s+(\w+)\s+FROM\s+clean_news_articles\s+GROUP\s+BY\s+\1\s+ORDER\s+BY\s+\2\s+DESC/i);
+  if (groupMatch) {
+    const col = groupMatch[1];
+    const alias = groupMatch[2];
+    const { data } = await supabase.from('clean_news_articles').select(col);
+    if (data) {
+      const counts: Record<string, number> = {};
+      data.forEach((r: any) => {
+        const k = r[col] || '(tanpa)';
+        counts[k] = (counts[k] || 0) + 1;
+      });
+      return {
+        data: Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, total]) => ({ [col]: name, [alias]: total })),
+        meta: 'group',
+      };
     }
   }
 
-  // Last fallback — use db route
-  const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
-    },
-    body: JSON.stringify({ query: sql }),
-  });
-  if (resp.ok) {
-    const d = await resp.json();
-    return { data: Array.isArray(d) ? d : [d], meta: 'sql' };
+  // Simple SELECT with WHERE
+  const selectMatch = sql.match(/SELECT\s+(.+?)\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+))?(?:\s+ORDER\s+BY\s+(.+))?(?:\s+LIMIT\s+(\d+))?/i);
+  if (selectMatch) {
+    const fields = selectMatch[1].split(',').map(f => f.trim());
+    let q = supabase.from('clean_news_articles').select(fields.join(','), { count: 'exact', head: false });
+    if (selectMatch[2]) {
+      const conds = selectMatch[2].match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/gi) || [];
+      for (const c of conds) {
+        const m = c.match(/(?:LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
+        if (m) {
+          const val = m[2].toLowerCase();
+          if (val === 'null') { q = q.is(m[1], null); }
+          else { q = q.eq(m[1], val); }
+        }
+      }
+    }
+    // Add order
+    if (selectMatch[3]) {
+      const [orderCol, orderDir] = selectMatch[3].trim().split(/\s+/);
+      q = q.order(orderCol, { ascending: (orderDir || '').toUpperCase() !== 'DESC' });
+    }
+    // Limit
+    const lim = parseInt(selectMatch[4] || '100');
+    q = q.limit(Math.min(lim, 100));
+
+    const { data } = await q;
+    return { data: data || [], meta: 'select' };
   }
 
-  return { data: [], meta: 'gagal mengeksekusi SQL' };
+  return { data: [], meta: 'tidak bisa parse SQL' };
 }
 
 // === PROGRESSIVE SEARCH (RAG PATH) — tanpa limit konteks ===
