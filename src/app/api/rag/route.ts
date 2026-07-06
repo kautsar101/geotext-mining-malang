@@ -262,26 +262,49 @@ async function progressiveSearch(
     }
   } catch {}
 
-  // Keyword search — ambil lebih banyak untuk konteks
   const keywords = queryText.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-  if (keywords.length > 0) {
+
+  // Keyword search — fallback ke query text asli jika parsed keywords kosong
+  const searchTerms = keywords.length > 0 ? keywords : [queryText.toLowerCase().replace(/[^a-z\s]/g, '').trim()];
+  if (searchTerms.length > 0 && searchTerms[0].length > 0) {
     let q = supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
       .limit(20);
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
-    q = q.or(keywords.map(k => `title.ilike.%${k}%`).join(','));
+    q = q.or(searchTerms.map(k => `title.ilike.%${k}%`).join(','));
     const { data: r1 } = await q;
     if (r1) { const items = dedup(r1); allSources.push(...items); searchSteps.push('keyword'); }
   }
 
-  // Fallback: tanpa filter
-  if (allSources.length === 0 && keywords.length > 0) {
+  // Fallback 1: ambil berdasarkan filter saja (tanpa keyword)
+  if (allSources.length < 3 && (filters.kecamatan || filters.kategori || filters.sentimen)) {
+    let q = supabase.from('clean_news_articles')
+      .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
+      .limit(20);
+    if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
+    if (filters.kategori) q = q.eq('category', filters.kategori);
+    if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
+    q = q.order('published_date', { ascending: false });
+    const { data: r } = await q;
+    if (r) { const items = dedup(r); allSources.push(...items); searchSteps.push('filter'); }
+  }
+
+  // Fallback 2: keyword tanpa filter
+  if (allSources.length === 0 && searchTerms.length > 0 && searchTerms[0].length > 0) {
     const { data: r2 } = await supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
-      .or(keywords.map(k => `title.ilike.%${k}%`).join(',')).limit(20);
+      .or(searchTerms.map(k => `title.ilike.%${k}%`).join(',')).limit(20);
     if (r2) { const items = dedup(r2); allSources.push(...items); searchSteps.push('keyword (tanpa filter)'); }
+  }
+
+  // Fallback 3: berita terbaru tanpa filter
+  if (allSources.length === 0) {
+    const { data: r3 } = await supabase.from('clean_news_articles')
+      .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
+      .order('published_date', { ascending: false }).limit(20);
+    if (r3) { const items = dedup(r3); allSources.push(...items); searchSteps.push('terbaru'); }
   }
 
   const sources = allSources.map((r: any, i: number) => ({
