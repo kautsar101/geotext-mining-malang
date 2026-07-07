@@ -175,9 +175,10 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       {/* Hero Carousel */}
       {hero && (
         <div className="relative rounded-2xl overflow-hidden h-60 shadow-lg">
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-800/80 via-stone-800/60 to-stone-900/90" />
+          <div className="absolute inset-0 bg-gradient-to-br from-teal-900/85 via-cyan-900/65 to-slate-950/90" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(94,234,212,0.24),transparent_32%)]" />
           <div className="relative h-full flex flex-col justify-end p-8">
-            <span className="text-amber-200/80 text-xs font-semibold uppercase tracking-widest mb-2">{hero.source}</span>
+            <span className="text-teal-100/85 text-xs font-semibold uppercase tracking-widest mb-2">{hero.source}</span>
             <a href={hero.url} target="_blank" rel="noopener noreferrer"
               className="text-white text-2xl font-bold leading-tight hover:underline flex items-start gap-3 max-w-3xl">
               {hero.title}<ExternalLink size={18} className="flex-shrink-0 mt-1 opacity-50" />
