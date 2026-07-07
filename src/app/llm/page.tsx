@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Send, Key, Bot, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
 import InlineContent from "@/components/InlineContent";
 
@@ -41,8 +42,11 @@ export default function LLMPage() {
   // ponytail: debug toggle disabled — debug data no longer sent from API
   const [isLoading, setIsLoading] = useState(false);
   const [chatFullscreen, setChatFullscreen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(genSessionId());
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_PREFIX + provider);
@@ -101,6 +105,71 @@ export default function LLMPage() {
   };
 
   const currentProvider = PROVIDERS.find(p => p.id === provider);
+  const chatPanelStyle = chatFullscreen
+    ? {
+        backgroundColor: "var(--bg-card)",
+        borderColor: "var(--border)",
+        left: "var(--sidebar-width, 16rem)",
+        top: 0,
+        right: 0,
+        bottom: 0,
+      }
+    : { backgroundColor: "var(--bg-card)", borderColor: "var(--border)" };
+
+  const chatPanel = (
+    <div className={`${chatFullscreen ? "fixed z-[100] rounded-none" : "relative flex-1 rounded-xl"} overflow-hidden flex flex-col shadow-sm border`}
+      style={chatPanelStyle}>
+      <button
+        onClick={() => setChatFullscreen(v => !v)}
+        title={chatFullscreen ? "Keluar fullscreen chat" : "Fullscreen chat"}
+        className="absolute right-4 top-4 z-30 p-2 rounded-lg shadow-sm transition-opacity hover:opacity-80"
+        style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
+      >
+        {chatFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+      </button>
+
+      <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${chatFullscreen ? "pt-16" : "pt-14"}`}>
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
+            <div className={`space-y-2 ${m.role === "user" ? "max-w-[86%]" : "max-w-[94%] lg:max-w-[90%]"}`}>
+              <div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "text-white" : ""}`}
+                style={m.role === "user" ? { backgroundColor: "var(--accent)" } : { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
+                <InlineContent text={m.content} sources={m.sources || []} />
+                {/* ponytail: debug panel removed — not exposed to client */}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {isLoading && (
+          <div className="flex justify-start animate-fade-in">
+            <div className="rounded-xl px-4 py-3 flex gap-1.5" style={{ backgroundColor: "var(--bg-primary)" }}>
+              {[0, 0.2, 0.4].map((d, i) => (
+                <div key={i} className="w-2 h-2 rounded-full animate-pulse-dot"
+                  style={{ backgroundColor: "var(--accent)", animationDelay: `${d}s` }} />
+              ))}
+            </div>
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+
+      <div className="border-t p-4" style={{ borderColor: "var(--border)" }}>
+        <div className="flex gap-3">
+          <input type="text" value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
+            placeholder="Tanya tentang berita daerah..."
+            className="flex-1 px-4 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2"
+            style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-primary)", borderColor: "var(--border)" }} />
+          <button onClick={handleSend} disabled={!input.trim() || isLoading}
+            className="px-4 py-2.5 text-white rounded-lg disabled:opacity-40 transition-colors"
+            style={{ backgroundColor: "var(--accent)" }}>
+            <Send size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="relative flex flex-col h-[calc(100vh-9rem)] w-full min-w-0">
@@ -158,58 +227,7 @@ export default function LLMPage() {
         <span className="flex-shrink-0">⚠️</span>
         Jawaban AI dapat mengandung kesalahan. Harap cross-check dengan sumber berita asli melalui link yang tersedia.
       </div>
-      <div className={`relative ${chatFullscreen ? "absolute inset-0 z-20" : "flex-1"} rounded-xl overflow-hidden flex flex-col shadow-sm border`}
-        style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
-        <button
-          onClick={() => setChatFullscreen(v => !v)}
-          title={chatFullscreen ? "Keluar fullscreen chat" : "Fullscreen chat"}
-          className="absolute right-4 top-4 z-30 p-2 rounded-lg shadow-sm transition-opacity hover:opacity-80"
-          style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
-        >
-          {chatFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-        </button>
-
-        <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${chatFullscreen ? "pt-16" : "pt-14"}`}>
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
-              <div className={`space-y-2 ${m.role === "user" ? "max-w-[86%]" : "max-w-[94%] lg:max-w-[90%]"}`}>
-                <div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "text-white" : ""}`}
-                  style={m.role === "user" ? { backgroundColor: "var(--accent)" } : { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
-                  <InlineContent text={m.content} sources={m.sources || []} />
-                  {/* ponytail: debug panel removed — not exposed to client */}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {isLoading && (
-            <div className="flex justify-start animate-fade-in">
-              <div className="rounded-xl px-4 py-3 flex gap-1.5" style={{ backgroundColor: "var(--bg-primary)" }}>
-                {[0, 0.2, 0.4].map((d, i) => (
-                  <div key={i} className="w-2 h-2 rounded-full animate-pulse-dot"
-                    style={{ backgroundColor: "var(--accent)", animationDelay: `${d}s` }} />
-                ))}
-              </div>
-            </div>
-          )}
-          <div ref={endRef} />
-        </div>
-
-        <div className="border-t p-4" style={{ borderColor: "var(--border)" }}>
-          <div className="flex gap-3">
-            <input type="text" value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
-              placeholder="Tanya tentang berita daerah..."
-              className="flex-1 px-4 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2"
-              style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-primary)", borderColor: "var(--border)" }} />
-            <button onClick={handleSend} disabled={!input.trim() || isLoading}
-              className="px-4 py-2.5 text-white rounded-lg disabled:opacity-40 transition-colors"
-              style={{ backgroundColor: "var(--accent)" }}>
-              <Send size={18} />
-            </button>
-          </div>
-        </div>
-      </div>
+      {chatFullscreen && mounted ? createPortal(chatPanel, document.body) : chatPanel}
     </div>
   );
 }

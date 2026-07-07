@@ -22,6 +22,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const [dark, setDark] = useState(false);
   const pathname = usePathname();
   const isLLMPage = pathname === "/llm";
+  const sidebarWidth = collapsed ? "5rem" : "16rem";
+  const shellStyle = {
+    backgroundColor: "var(--bg-primary)",
+  } as React.CSSProperties;
+  const bodyStyle = { "--sidebar-width": sidebarWidth } as React.CSSProperties;
 
   useEffect(() => {
     const saved = localStorage.getItem("theme");
@@ -40,8 +45,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="id">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "var(--bg-primary)" }}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} style={bodyStyle}>
+        <div className="flex h-screen overflow-hidden" style={shellStyle}>
           <aside style={{ backgroundColor: "var(--bg-sidebar)", borderRight: "1px solid var(--border)" }}
             className={`flex-shrink-0 flex flex-col transition-all duration-300 ${collapsed ? "w-20" : "w-64"}`}>
             <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
