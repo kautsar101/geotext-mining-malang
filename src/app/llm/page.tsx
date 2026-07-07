@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Key, Bot, ExternalLink } from "lucide-react";
+import { Send, Key, Bot, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
 import InlineContent from "@/components/InlineContent";
 
 const KEY_LINKS: Record<string, string> = {
@@ -40,6 +40,7 @@ export default function LLMPage() {
   const [showDebug, setShowDebug] = useState(false);
   // ponytail: debug toggle disabled — debug data no longer sent from API
   const [isLoading, setIsLoading] = useState(false);
+  const [chatFullscreen, setChatFullscreen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(genSessionId());
 
@@ -52,6 +53,14 @@ export default function LLMPage() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setChatFullscreen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const saveKey = (key: string) => {
     setApiKey(key);
@@ -73,7 +82,7 @@ export default function LLMPage() {
     try {
       const history = messages.slice(-5).map(m => ({ role: m.role, content: m.content }));
 
-      const res = await fetch("/api/rag", {
+      const res = await fetch("/api/llm", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-session-id": sessionId.current },
         body: JSON.stringify({ query: userMsg, apiKey, provider, messages: history }),
@@ -94,7 +103,7 @@ export default function LLMPage() {
   const currentProvider = PROVIDERS.find(p => p.id === provider);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-9rem)] w-full min-w-0">
+    <div className="relative flex flex-col h-[calc(100vh-9rem)] w-full min-w-0">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>RAG Chat</h2>
@@ -149,10 +158,18 @@ export default function LLMPage() {
         <span className="flex-shrink-0">⚠️</span>
         Jawaban AI dapat mengandung kesalahan. Harap cross-check dengan sumber berita asli melalui link yang tersedia.
       </div>
-      <div className="flex-1 rounded-xl overflow-hidden flex flex-col shadow-sm border"
+      <div className={`relative ${chatFullscreen ? "absolute inset-0 z-20" : "flex-1"} rounded-xl overflow-hidden flex flex-col shadow-sm border`}
         style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
+        <button
+          onClick={() => setChatFullscreen(v => !v)}
+          title={chatFullscreen ? "Keluar fullscreen chat" : "Fullscreen chat"}
+          className="absolute right-4 top-4 z-30 p-2 rounded-lg shadow-sm transition-opacity hover:opacity-80"
+          style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
+        >
+          {chatFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${chatFullscreen ? "pt-16" : "pt-14"}`}>
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
               <div className={`space-y-2 ${m.role === "user" ? "max-w-[86%]" : "max-w-[94%] lg:max-w-[90%]"}`}>
