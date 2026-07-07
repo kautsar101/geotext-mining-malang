@@ -47,6 +47,14 @@ function cleanSearchTerm(term: string): string {
   return term.toLowerCase().replace(/[^a-z0-9\s-]/gi, '').trim();
 }
 
+function expandSearchTerms(terms: string[]): string[] {
+  const expanded = new Set<string>(terms);
+  if (terms.some((term) => ['kecelakaan', 'tabrakan', 'bertabrakan'].includes(term))) {
+    ['kecelakaan', 'tabrakan', 'bertabrakan', 'truk', 'motor'].forEach((term) => expanded.add(term));
+  }
+  return Array.from(expanded).slice(0, 10);
+}
+
 export async function parseRetrievalQuery(
   provider: ProviderId,
   apiKey: string,
@@ -135,7 +143,7 @@ export async function retrieveSources(
   }
 
   const keywords = queryText.toLowerCase().split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8);
-  const searchTerms = keywords.length > 0 ? keywords : [cleanSearchTerm(queryText)];
+  const searchTerms = expandSearchTerms(keywords.length > 0 ? keywords : [cleanSearchTerm(queryText)]);
 
   if (searchTerms[0]) {
     let q = supabase.from('clean_news_articles')
@@ -144,7 +152,7 @@ export async function retrieveSources(
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
-    q = q.or(searchTerms.map((k) => `title.ilike.%${k}%`).join(','));
+    q = q.or(searchTerms.flatMap((k) => [`title.ilike.%${k}%`, `content_clean.ilike.%${k}%`]).join(','));
 
     const { data } = await q;
     if (data && data.length > 0) {

@@ -80,9 +80,11 @@ export async function POST(request: NextRequest) {
       if (validateSQL(sqlGenerated)) {
         const result = await executeSQL(sqlGenerated);
         sqlResult = result.data;
-        sqlContext = `SQL: ${sqlGenerated}\nMeta: ${result.meta}\nHasil: ${JSON.stringify(result.data, null, 2)}`;
+        sqlContext = result.data.length > 0
+          ? `SQL: ${sqlGenerated}\nMeta: ${result.meta}\nHasil: ${JSON.stringify(result.data, null, 2)}`
+          : `SQL: ${sqlGenerated}\nMeta: ${result.meta}\nHasil: []\nPeringatan: hasil SQL kosong. Jangan membuat angka statistik sendiri.`;
       } else {
-        sqlContext = 'SQL tidak valid, jadi statistik tidak dieksekusi.';
+        sqlContext = `SQL tidak valid dan tidak dieksekusi: ${sqlGenerated || '-'}\nPeringatan: jangan membuat angka statistik sendiri.`;
       }
     }
 

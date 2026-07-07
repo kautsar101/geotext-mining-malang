@@ -22,6 +22,17 @@ function renderMarkdown(text: string): React.ReactNode[] {
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
 
+    if (isTableStart(lines, li)) {
+      const tableLines: string[] = [];
+      while (li < lines.length && lines[li].trim().startsWith('|')) {
+        tableLines.push(lines[li]);
+        li++;
+      }
+      li--;
+      parts.push(renderTable(tableLines, `table-${li}`));
+      continue;
+    }
+
     // Heading ###
     const headingMatch = line.match(/^###\s+(.+)$/);
     if (headingMatch) {
@@ -77,6 +88,57 @@ function renderMarkdown(text: string): React.ReactNode[] {
   }
 
   return parts;
+}
+
+function parseTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(cell => cell.trim());
+}
+
+function isSeparatorRow(line: string): boolean {
+  return /^\s*\|?[\s:-]+\|[\s|:-]*$/.test(line);
+}
+
+function isTableStart(lines: string[], index: number): boolean {
+  const current = lines[index] || '';
+  const next = lines[index + 1] || '';
+  return current.trim().startsWith('|') && current.includes('|') && isSeparatorRow(next);
+}
+
+function renderTable(lines: string[], key: string): React.ReactNode {
+  const header = parseTableRow(lines[0]);
+  const rows = lines.slice(2).filter(line => line.trim()).map(parseTableRow);
+
+  return (
+    <div key={key} className="my-3 overflow-x-auto rounded-lg border" style={{ borderColor: "var(--border)" }}>
+      <table className="min-w-full text-xs border-collapse">
+        <thead style={{ backgroundColor: "var(--bg-card)" }}>
+          <tr>
+            {header.map((cell, i) => (
+              <th key={i} className="px-3 py-2 text-left font-semibold border-b" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                {renderInline(cell)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri} className="border-b last:border-b-0" style={{ borderColor: "var(--border)" }}>
+              {header.map((_, ci) => (
+                <td key={ci} className="px-3 py-2 align-top" style={{ color: "var(--text-primary)" }}>
+                  {renderInline(row[ci] || '')}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function renderInline(text: string): React.ReactNode[] {

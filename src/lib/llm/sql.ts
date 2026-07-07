@@ -7,9 +7,21 @@ type QueryBuilder = {
   eq: (column: string, value: unknown) => QueryBuilder;
   ilike: (column: string, value: string) => QueryBuilder;
   is: (column: string, value: null) => QueryBuilder;
+  in: (column: string, values: string[]) => QueryBuilder;
   order: (column: string, options: { ascending: boolean }) => QueryBuilder;
   limit: (count: number) => QueryBuilder;
 } & PromiseLike<{ data?: unknown; count?: number | null }>;
+
+const VALID_KECAMATAN = [
+  'ampelgading', 'bantur', 'bululawang', 'dampit', 'dau', 'donomulyo', 'gedangan',
+  'gondanglegi', 'jabung', 'kalipare', 'karangploso', 'kasembon', 'kepanjen',
+  'kromengan', 'lawang', 'ngajum', 'ngantang', 'pagak', 'pagelaran', 'pakis',
+  'pakisaji', 'poncokusumo', 'pujon', 'singosari', 'sumbermanjing wetan',
+  'sumberpucung', 'tajinan', 'tirtoyudo', 'tumpang', 'turen', 'wagir', 'wajak',
+  'wonosari',
+];
+
+const ALLOWED_COLUMNS = ['category', 'sentiment', 'primary_kecamatan', 'source'];
 
 export const SCHEMA_DESC = `Tabel: clean_news_articles
 Kolom:
@@ -34,7 +46,10 @@ Aturan wajib:
 2. Jangan INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE.
 3. Jangan UNION, subquery, multi-statement, komentar SQL, atau tabel lain.
 4. Gunakan LOWER() untuk case-insensitive comparison.
-5. Balas HANYA SQL satu baris.
+5. Jangan filter primary_kecamatan dengan "malang". "Malang" berarti Kabupaten Malang, bukan kecamatan.
+6. Untuk perbandingan nilai seperti positive/negative, gunakan GROUP BY, bukan hanya COUNT gabungan.
+7. Jangan gunakan STRING_AGG atau fungsi selain COUNT.
+8. Balas HANYA SQL satu baris.
 
 Contoh:
 User: "ada berapa berita positif di Kepanjen?"
@@ -59,64 +74,98 @@ export function validateSQL(sql: string): boolean {
   if ((upper.match(/;/g) || []).length > 0) return false;
 
   const noStrings = upper.replace(/'[^']*'/g, '');
-  const blocked = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE', 'UNION', '--', '/*'];
+  const blocked = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE', 'EXEC', 'EXECUTE', 'UNION', 'STRING_AGG', '--', '/*'];
+  if (/PRIMARY_KECAMATAN\)?\s*=\s*'MALANG'/.test(upper)) return false;
   return !blocked.some((word) => noStrings.includes(word));
 }
 
-export async function executeSQL(sql: string): Promise<{ data: Record<string, unknown>[]; meta: string }> {
-  function parseWhereToFilters(q: QueryBuilder, whereClause: string): QueryBuilder {
-    const parts = whereClause.split(/\s+AND\s+/i);
-    for (const part of parts) {
-      const m = part.match(/(LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
-      if (!m) continue;
+function stripUnsupportedKecamatan(sql: string): string {
+  return sql
+    .replace(/\s+AND\s+LOWER\(primary_kecamatan\)\s*=\s*'malang'/gi, '')
+    .replace(/\s+WHERE\s+LOWER\(primary_kecamatan\)\s*=\s*'malang'\s*(?=GROUP|ORDER|LIMIT|$)/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-      const hasLower = Boolean(m[1]);
-      const col = m[2];
-      const val = m[3];
-      if (val === 'null') {
-        q = q.is(col, null);
-      } else if (hasLower) {
-        q = q.ilike(col, val);
-      } else {
-        q = q.eq(col, val);
-      }
+function extractWhere(sql: string): string {
+  const match = sql.match(/\sWHERE\s+(.+?)(?:\sGROUP\s+BY|\sORDER\s+BY|\sLIMIT|$)/i);
+  return match?.[1]?.trim() || '';
+}
+
+async function countRows(whereClause = ''): Promise<number> {
+  let q = supabase.from('clean_news_articles').select('*', { count: 'exact', head: true }) as unknown as QueryBuilder;
+  if (whereClause) q = applyWhereFilters(q, whereClause);
+  const { count } = await q;
+  return count || 0;
+}
+
+function applyWhereFilters(q: QueryBuilder, whereClause: string): QueryBuilder {
+  const parts = whereClause.split(/\s+AND\s+/i);
+  for (const part of parts) {
+    const inMatch = part.match(/(?:LOWER\()?(\w+)(?:\))?\s+IN\s*\(([^)]+)\)/i);
+    if (inMatch) {
+      const col = inMatch[1];
+      const values = inMatch[2]
+        .split(',')
+        .map((v) => v.replace(/'/g, '').trim().toLowerCase())
+        .filter(Boolean);
+      if (values.length > 0) q = q.in(col, values);
+      continue;
     }
-    return q;
-  }
 
+    const eqMatch = part.match(/(LOWER\()?(\w+)(?:\))?\s*=\s*'([^']+)'/i);
+    if (!eqMatch) continue;
+
+    const hasLower = Boolean(eqMatch[1]);
+    const col = eqMatch[2];
+    const val = eqMatch[3].toLowerCase();
+    if (col === 'primary_kecamatan' && !VALID_KECAMATAN.includes(val)) continue;
+    if (val === 'null') q = q.is(col, null);
+    else if (hasLower) q = q.ilike(col, val);
+    else q = q.eq(col, val);
+  }
+  return q;
+}
+
+async function groupCount(col: string, alias: string, whereClause = ''): Promise<Record<string, unknown>[]> {
+  if (!ALLOWED_COLUMNS.includes(col)) return [];
+  const values = col === 'primary_kecamatan'
+    ? VALID_KECAMATAN
+    : col === 'category'
+      ? ['ekonomi', 'sosial', 'kesehatan', 'pendidikan']
+      : col === 'sentiment'
+        ? ['positive', 'negative', 'neutral']
+        : [];
+
+  if (values.length === 0) return [];
+
+  const rows = await Promise.all(values.map(async (value) => {
+    const extra = `${whereClause ? `${whereClause} AND ` : ''}LOWER(${col})='${value}'`;
+    return { [col]: value, [alias]: await countRows(extra) };
+  }));
+
+  return rows
+    .filter((row) => Number(row[alias]) > 0)
+    .sort((a, b) => Number(b[alias]) - Number(a[alias]));
+}
+
+export async function executeSQL(rawSql: string): Promise<{ data: Record<string, unknown>[]; meta: string }> {
+  const sql = stripUnsupportedKecamatan(rawSql);
   const countMatch = sql.match(/SELECT\s+COUNT\(\*\)(?:\s+as\s+\w+)?\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+))?/i);
   if (countMatch) {
-    let q = supabase.from('clean_news_articles').select('*', { count: 'exact', head: true }) as unknown as QueryBuilder;
-    if (countMatch[1]) q = parseWhereToFilters(q, countMatch[1]);
-    const { count } = await q;
-    return { data: [{ count: count || 0 }], meta: 'count' };
+    return { data: [{ count: await countRows(extractWhere(sql)) }], meta: 'count' };
   }
 
-  const groupMatch = sql.match(/SELECT\s+(LOWER\()?(\w+)(?:\))?,\s*COUNT\(\*\)\s+as\s+(\w+)\s+FROM\s+clean_news_articles\s+GROUP\s+BY\s+\2(?:\s+ORDER\s+BY\s+\3\s+DESC)?/i);
+  const groupMatch = sql.match(/SELECT\s+(?:LOWER\()?(\w+)(?:\))?,\s*COUNT\(\*\)\s+as\s+(\w+)\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+?))?\s+GROUP\s+BY\s+\1(?:\s+ORDER\s+BY\s+\2\s+DESC)?/i);
   if (groupMatch) {
-    const col = groupMatch[2];
-    const alias = groupMatch[3];
-    const { data } = await supabase.from('clean_news_articles').select(col);
-    const counts: Record<string, number> = {};
-
-    ((data || []) as unknown as Record<string, unknown>[]).forEach((row) => {
-      const key = String(row[col] || '(tanpa)');
-      counts[key] = (counts[key] || 0) + 1;
-    });
-
-    return {
-      data: Object.entries(counts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, total]) => ({ [col]: name, [alias]: total })),
-      meta: 'group',
-    };
+    return { data: await groupCount(groupMatch[1], groupMatch[2], extractWhere(sql)), meta: 'group' };
   }
 
   const selectMatch = sql.match(/SELECT\s+(.+?)\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+))?(?:\s+ORDER\s+BY\s+(.+))?(?:\s+LIMIT\s+(\d+))?/i);
   if (selectMatch) {
     const fields = selectMatch[1].split(',').map((f) => f.trim());
     let q = supabase.from('clean_news_articles').select(fields.join(','), { count: 'exact', head: false }) as unknown as QueryBuilder;
-    if (selectMatch[2]) q = parseWhereToFilters(q, selectMatch[2]);
+    if (selectMatch[2]) q = applyWhereFilters(q, selectMatch[2]);
     if (selectMatch[3]) {
       const [orderCol, orderDir] = selectMatch[3].trim().split(/\s+/);
       q = q.order(orderCol, { ascending: (orderDir || '').toUpperCase() !== 'DESC' });

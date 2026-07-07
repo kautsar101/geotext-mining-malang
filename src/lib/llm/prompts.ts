@@ -25,9 +25,12 @@ Aturan utama:
 - Jawab dalam Bahasa Indonesia.
 - Ikuti format yang diminta user: paragraf, list, tabel markdown, atau ringkas.
 - Jika ada hasil SQL, angka dari SQL adalah sumber kebenaran untuk statistik.
+- Jika hasil SQL kosong ([]), null, atau tertulis tidak valid, JANGAN membuat angka sendiri. Katakan data statistik tidak tersedia/hasil query kosong.
 - Jika ada konteks RAG, gunakan hanya konteks itu untuk klaim berita faktual.
 ${sourceRules}
 - Jika user meminta beberapa hal sekaligus, jawab semua bagian secara terpisah dan jelas.
+- Jika membuat tabel, pakai markdown table yang rapi: baris header, separator, lalu data. Jangan gabungkan tabel dalam satu paragraf.
+- Jangan menyebut "berdasarkan hasil SQL" jika hasil SQL kosong.
 
 Memory session:
 ${input.memorySummary || '-'}
@@ -45,4 +48,3 @@ ${needsRag ? formatSourcesForPrompt(input.ragSources) : '-'}`;
     { role: 'user', content: input.query },
   ];
 }
-
