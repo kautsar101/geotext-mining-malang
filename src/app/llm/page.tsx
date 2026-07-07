@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Send, Key, Bot, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
-import InlineContent from "@/components/InlineContent";
+import InlineContent from "@/frontend/components/InlineContent";
 
 const KEY_LINKS: Record<string, string> = {
   groq: "https://console.groq.com/keys",

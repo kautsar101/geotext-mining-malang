@@ -68,4 +68,3 @@ Hybrid question:
 - rangkuman harus memakai citation
 - jawaban boleh pakai paragraf/list sesuai prompt
 ```
-

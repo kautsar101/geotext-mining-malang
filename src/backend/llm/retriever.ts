@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/backend/db/supabase';
 import { callLLM, generateEmbedding } from './providers';
 import { safeJsonParse, sanitizeInput } from './guardrails';
 import type { ProviderId, Source } from './types';

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/backend/db/supabase';
 import { callLLM } from './providers';
 import type { ChatMessage, ProviderId } from './types';
 
