@@ -38,6 +38,7 @@ export default function LLMPage() {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  // ponytail: debug toggle disabled — debug data no longer sent from API
   const [isLoading, setIsLoading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(genSessionId());
@@ -99,11 +100,7 @@ export default function LLMPage() {
           <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>RAG Chat</h2>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Multi-provider LLM + database berita daerah</p>
         </div>
-        <button onClick={() => setShowDebug(!showDebug)}
-          className="text-[10px] px-3 py-1.5 rounded-lg font-medium transition-colors"
-          style={{ backgroundColor: showDebug ? "var(--accent)" : "var(--bg-primary)", color: showDebug ? "#fff" : "var(--text-muted)" }}>
-          {showDebug ? "Debug ON" : "Debug"}
-        </button>
+        {/* ponytail: debug button removed — no longer needed */}
       </div>
 
       {/* Provider + API Key */}
@@ -162,17 +159,7 @@ export default function LLMPage() {
                 <div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "text-white" : ""}`}
                   style={m.role === "user" ? { backgroundColor: "var(--accent)" } : { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
                   <InlineContent text={m.content} sources={m.sources || []} />
-                  {showDebug && m.debug && m.role === "assistant" && (
-                    <div className="mt-2 pt-2 border-t text-[9px] font-mono space-y-0.5" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-                      <div>Route: <span className="font-semibold">{m.debug.route || '?'}</span></div>
-                      {m.debug.query && <div className="truncate">Query: {m.debug.query}</div>}
-                      {m.debug.sql && <div className="truncate">SQL: {m.debug.sql}</div>}
-                      {m.debug.sqlResult && <div>Hasil: {JSON.stringify(m.debug.sqlResult).slice(0, 120)}</div>}
-                      {m.debug.parsed && <div>Parsed: {JSON.stringify(m.debug.parsed)}</div>}
-                      {m.debug.sourcesCount !== undefined && <div>Sumber: {m.debug.sourcesCount}</div>}
-                      {m.debug.searchInfo && <div className="truncate">{m.debug.searchInfo}</div>}
-                    </div>
-                  )}
+                  {/* ponytail: debug panel removed — not exposed to client */}
                 </div>
               </div>
             </div>

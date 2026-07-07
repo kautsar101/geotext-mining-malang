@@ -6,6 +6,12 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
+const ALLOWED_TABLES = new Set(['clean_news_articles']);
+const ALLOWED_COLUMNS = new Set([
+  'id', 'title', 'source', 'url', 'category', 'sentiment',
+  'primary_kecamatan', 'published_date', 'content_clean', 'created_at',
+]);
+const ALLOWED_OPS = new Set(['eq', 'ilike', 'is', 'not.is', 'gte', 'lte']);
 const PAGE_SIZE = 1000;
 
 export async function GET(request: NextRequest) {
@@ -16,13 +22,21 @@ export async function GET(request: NextRequest) {
   const offset = parseInt(searchParams.get('offset') || '0');
   const countMode = searchParams.get('count');
 
-  if (!table) {
-    return NextResponse.json({ error: 'table parameter required' }, { status: 400 });
+  // Hardcode: hanya satu tabel yang boleh di-query
+  if (!table || !ALLOWED_TABLES.has(table)) {
+    return NextResponse.json({ error: 'table tidak diizinkan' }, { status: 403 });
   }
 
   try {
-    // Build the base query with filters
     function buildQuery() {
+      // Validasi kolom yang diminta
+      const cols = select === '*' ? ['*'] : select.split(',').map((c: string) => c.trim());
+      for (const col of cols) {
+        if (col !== '*' && !ALLOWED_COLUMNS.has(col)) {
+          throw new Error(`kolom tidak diizinkan: ${col}`);
+        }
+      }
+
       let q = supabase.from(table).select(select, countMode === 'exact' ? { count: 'exact' } : undefined);
 
       const filters: [string, string][] = [];
@@ -32,28 +46,35 @@ export async function GET(request: NextRequest) {
       });
 
       for (const [col, opAndVal] of filters) {
+        // Validasi kolom filter hanya dari allowed set
+        const colName = col.split('.')[0];
+        if (!ALLOWED_COLUMNS.has(colName)) continue;
+
         const parts = opAndVal.split('.');
         if (parts.length === 2) {
           const [op, val] = parts;
-          if (op === 'eq') q = q.eq(col, val === 'null' ? null : val);
-          else if (op === 'ilike') q = q.ilike(col, val);
-          else if (op === 'is') q = q.is(col, val === 'null' ? null : val);
-          else if (op === 'not.is') q = q.not(col, 'is', val === 'null' ? null : val);
-          else if (op === 'gte') q = q.gte(col, val);
-          else if (op === 'lte') q = q.lte(col, val);
+          if (ALLOWED_OPS.has(op)) {
+            if (op === 'eq') q = q.eq(col, val === 'null' ? null : val);
+            else if (op === 'ilike') q = q.ilike(col, val);
+            else if (op === 'is') q = q.is(col, val === 'null' ? null : val);
+            else if (op === 'not.is') q = q.not(col, 'is', val === 'null' ? null : val);
+            else if (op === 'gte') q = q.gte(col, val);
+            else if (op === 'lte') q = q.lte(col, val);
+          }
         }
       }
 
       if (searchParams.get('order')) {
         const [col, dir] = (searchParams.get('order') || '').split('.');
-        q = q.order(col, { ascending: dir === 'asc' });
+        if (ALLOWED_COLUMNS.has(col)) {
+          q = q.order(col, { ascending: dir === 'asc' });
+        }
       }
 
       return q;
     }
 
     if (limit > 0) {
-      // User asked for a specific limit — honor it directly
       let query = buildQuery();
       query = query.range(offset, offset + limit - 1);
       const { data, error, count } = await query;
@@ -61,8 +82,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data, count });
     }
 
-    // No limit (limit=0) — fetch everything via pagination
-    // Supabase caps at 1000 per request, so we loop in chunks
     let allData: any[] = [];
     let page = 0;
 

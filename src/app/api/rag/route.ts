@@ -339,8 +339,11 @@ async function flushLogs() {
 }
 
 async function insertLog(entry: any) {
-  logQueue.push(entry);
-  // Flush every 5 seconds max
+  // Hapus field sensitif sebelum log
+  const safe = { ...entry };
+  delete safe.apiKey;
+  delete safe.api_key;
+  logQueue.push(safe);
   if (logQueue.length >= 10) flushLogs();
   else setTimeout(flushLogs, 5000);
 }
@@ -379,8 +382,8 @@ export async function POST(request: NextRequest) {
 
       if (!validateSQL(sql)) {
         const errMsg = 'Query tidak valid. Coba tanya dengan cara lain.';
-        insertLog({ session_id: sid, query_raw: searchTerm, route: 'sql', latency_ms: Date.now() - t0, error: 'SQL tidak valid', response: errMsg });
-        return NextResponse.json({ response: errMsg, sources: [], debug: dbg });
+        insertLog({ session_id: sid, query_raw: searchTerm, route: 'sql', latency_ms: Date.now() - t0, error: 'SQL tidak valid' });
+        return NextResponse.json({ response: errMsg, sources: [] });
       }
 
       const { data: sqlResult, meta } = await executeSQL(sql);
@@ -388,8 +391,8 @@ export async function POST(request: NextRequest) {
       dbg.sqlMeta = meta;
 
       if (sqlResult.length === 0) {
-        insertLog({ session_id: sid, query_raw: searchTerm, route: 'sql', sql_generated: sql, latency_ms: Date.now() - t0, response: 'Tidak ada data' });
-        return NextResponse.json({ response: 'Tidak ada data yang ditemukan untuk query tersebut.', sources: [], debug: dbg });
+        insertLog({ session_id: sid, query_raw: searchTerm, route: 'sql', latency_ms: Date.now() - t0, response: 'Tidak ada data' });
+        return NextResponse.json({ response: 'Tidak ada data yang ditemukan untuk query tersebut.', sources: [] });
       }
 
       const formatPrompt = `Anda adalah asisten analisis berita daerah. Berikut adalah hasil query SQL dari database:
@@ -405,8 +408,8 @@ Buat jawaban natural dalam Bahasa Indonesia berdasarkan data tersebut. Jika data
         { role: 'user', content: formatPrompt },
       ], 400, 0.3);
 
-      insertLog({ session_id: sid, query_raw: searchTerm, route: 'sql', sql_generated: sql, sql_result: sqlResult, latency_ms: Date.now() - t0, response: answer });
-      return NextResponse.json({ response: answer, sources: [], debug: dbg });
+      insertLog({ session_id: sid, query_raw: searchTerm, route: 'sql', latency_ms: Date.now() - t0 });
+      return NextResponse.json({ response: answer, sources: [] });
     }
 
     // === RAG PATH ===
@@ -484,7 +487,7 @@ ${context}`;
       insertLog({ session_id: sid, query_raw: searchTerm, route: 'rag', latency_ms: Date.now() - t0, response: 'Sapaan' });
       return NextResponse.json({
         response: "Halo! Ada yang bisa saya bantu? Saya bisa mencari berita daerah — coba tanyakan topik, kecamatan, kategori, atau isu tertentu.",
-        sources: [], debug: dbg,
+        sources: [],
       });
     }
 
@@ -494,8 +497,8 @@ ${context}`;
       { role: 'user', content: searchTerm },
     ], 700, 0.3);
 
-    insertLog({ session_id: sid, query_raw: searchTerm, route: 'rag', sources: sources.slice(0, 5), latency_ms: Date.now() - t0, response: answer });
-    return NextResponse.json({ response: answer, sources, debug: dbg });
+      insertLog({ session_id: sid, query_raw: searchTerm, route: 'rag', latency_ms: Date.now() - t0 });
+      return NextResponse.json({ response: answer, sources });
   } catch (e: any) {
     const errMsg = e.message || 'Internal error';
     insertLog({ session_id: '', query_raw: dbg.query || '', route: dbg.route, error: errMsg, latency_ms: Date.now() - t0 });
