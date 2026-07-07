@@ -94,7 +94,7 @@ export default function LLMPage() {
   const currentProvider = PROVIDERS.find(p => p.id === provider);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-9rem)]">
+    <div className="flex flex-col h-[calc(100vh-9rem)] w-full min-w-0">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>RAG Chat</h2>
@@ -155,7 +155,7 @@ export default function LLMPage() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
-              <div className="max-w-[80%] space-y-2">
+              <div className={`space-y-2 ${m.role === "user" ? "max-w-[86%]" : "max-w-[94%] lg:max-w-[90%]"}`}>
                 <div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "text-white" : ""}`}
                   style={m.role === "user" ? { backgroundColor: "var(--accent)" } : { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
                   <InlineContent text={m.content} sources={m.sources || []} />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Geist, Geist_Mono } from "next/font/google";
 import { LayoutGrid, Map, BarChart3, Newspaper, MessageSquare, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
 import "./globals.css";
@@ -19,6 +20,8 @@ const NAV_ITEMS = [
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [dark, setDark] = useState(false);
+  const pathname = usePathname();
+  const isLLMPage = pathname === "/llm";
 
   useEffect(() => {
     const saved = localStorage.getItem("theme");
@@ -75,8 +78,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </button>
             </div>
           </aside>
-          <main className="flex-1 overflow-y-auto p-6 lg:p-8" style={{ backgroundColor: "var(--bg-primary)" }}>
-            <div className="animate-fade-in max-w-7xl mx-auto">{children}</div>
+          <main className="flex-1 overflow-y-auto p-4 lg:p-8" style={{ backgroundColor: "var(--bg-primary)" }}>
+            <div className={`animate-fade-in mx-auto ${isLLMPage ? "w-full max-w-none" : "max-w-7xl"}`}>{children}</div>
           </main>
         </div>
       </body>
