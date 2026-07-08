@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, LineChart, Line, Area, AreaChart, Brush
+  PieChart, Pie, Cell, Legend, Area, AreaChart, Brush
 } from "recharts";
 import {
   Newspaper, MapPin, Hash, TrendingUp,
@@ -21,14 +21,14 @@ function fetcherOne(params: string) {
 }
 
 const C = {
-  c1: "#0D9488", c2: "#14B8A6", c3: "#F59E0B", c4: "#6366F1", c5: "#E11D48", c6: "#EAB308",
-  primary: "#0D9488", secondary: "#14B8A6", tertiary: "#5EEAD4", muted: "#99F6E4",
+  c1: "#157f3b", c2: "#4bb062", c3: "#F59E0B", c4: "#6366F1", c5: "#E11D48", c6: "#EAB308",
+  primary: "#157f3b", secondary: "#4bb062", tertiary: "#98d594", muted: "#d7efc4",
   tm: "#9C9590", ts: "#6B6560", bd: "#E5E0D8", bg: "#FFFFFF",
 };
 function getDark() {
   return {
-    c1: "#2DD4BF", c2: "#14B8A6", c3: "#FBBF24", c4: "#818CF8", c5: "#FB7185", c6: "#FACC15",
-    primary: "#2DD4BF", secondary: "#14B8A6", tertiary: "#0D9488", muted: "#115E59",
+    c1: "#98d594", c2: "#4bb062", c3: "#FBBF24", c4: "#818CF8", c5: "#FB7185", c6: "#FACC15",
+    primary: "#98d594", secondary: "#4bb062", tertiary: "#157f3b", muted: "#1f5f31",
     tm: "#78716C", ts: "#A8A29E", bd: "#44403C", bg: "#292524",
   };
 }
@@ -153,7 +153,7 @@ export default function Dashboard() {
   }));
 const CAT_COLORS: Record<string, string> = {
   ekonomi: "text-blue-600 bg-blue-50", sosial: "text-purple-600 bg-purple-50",
-  kesehatan: "text-teal-600 bg-teal-50", pendidikan: "text-indigo-600 bg-indigo-50",
+  kesehatan: "text-green-600 bg-green-50", pendidikan: "text-indigo-600 bg-indigo-50",
 };
 const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kesehatan: "🏥", pendidikan: "📚" };
 
@@ -192,10 +192,10 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       {/* Hero Carousel */}
       {hero && (
         <div className="relative rounded-2xl overflow-hidden h-60 shadow-lg">
-          <div className="absolute inset-0 bg-gradient-to-br from-teal-900/85 via-cyan-900/65 to-slate-950/90" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(94,234,212,0.24),transparent_32%)]" />
+          <div className="absolute inset-0 bg-gradient-to-br from-green-950/85 via-emerald-900/65 to-slate-950/90" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(152,213,148,0.24),transparent_32%)]" />
           <div className="relative h-full flex flex-col justify-end p-8">
-            <span className="text-teal-100/85 text-xs font-semibold uppercase tracking-widest mb-2">{hero.source}</span>
+            <span className="text-green-100/85 text-xs font-semibold uppercase tracking-widest mb-2">{hero.source}</span>
             <a href={hero.url} target="_blank" rel="noopener noreferrer"
               className="text-white text-2xl font-bold leading-tight hover:underline flex items-start gap-3 max-w-3xl">
               {hero.title}<ExternalLink size={18} className="flex-shrink-0 mt-1 opacity-50" />
@@ -370,10 +370,11 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
           </div>
           <div style={{ height: 400 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dailyData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
+              <AreaChart data={dailyData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
                 <defs>
                   <linearGradient id={lineChartId} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={cc.c2} stopOpacity={0.25} />
+                    <stop offset="5%" stopColor={cc.c2} stopOpacity={0.35} />
+                    <stop offset="55%" stopColor={cc.c2} stopOpacity={0.12} />
                     <stop offset="95%" stopColor={cc.c2} stopOpacity={0} />
                   </linearGradient>
                 </defs>
@@ -381,15 +382,14 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                 <XAxis dataKey="date" tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} interval="preserveStartEnd" minTickGap={30} />
                 <YAxis tick={{ fontSize: 10, fill: cc.tm }} axisLine={false} tickLine={false} width={35} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: cc.tm, strokeDasharray: "3 3" }} />
-                <Area type="monotone" dataKey="value" stroke="none" fill={`url(#${lineChartId})`} isAnimationActive={false} />
-                <Line type="monotone" dataKey="value" stroke={cc.c2} strokeWidth={2.5} dot={false}
+                <Area type="monotone" dataKey="value" stroke={cc.c2} strokeWidth={2.5} fill={`url(#${lineChartId})`} dot={false}
                   activeDot={{ r: 5, fill: cc.bg, stroke: cc.c2, strokeWidth: 3 }} isAnimationActive={false} />
                 <Brush dataKey="date" height={28} stroke={cc.tm} fill={cc.bg} travellerWidth={10} gap={1} style={{ color: cc.ts, fontSize: 9 }}>
                   <AreaChart data={dailyData}>
                     <Area type="monotone" dataKey="value" stroke={cc.c2} fill={cc.c2 + "30"} isAnimationActive={false} />
                   </AreaChart>
                 </Brush>
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
           <div className="flex items-center justify-between mt-2 px-1">
@@ -458,9 +458,6 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
               ))}
               {sourceOtherBreakdown.length > 0 && (
                 <div className="pt-2">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                    Breakdown lainnya
-                  </p>
                   <div className="space-y-1.5">
                     {sourceOtherBreakdown.map((d) => (
                       <div key={d.name} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: `${cc.tm}10` }}>

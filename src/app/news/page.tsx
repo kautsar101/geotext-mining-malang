@@ -119,7 +119,7 @@ export default function NewsPage() {
   };
   const catColors: Record<string, string> = {
     ekonomi: "text-blue-600 bg-blue-50", sosial: "text-purple-600 bg-purple-50",
-    kesehatan: "text-teal-600 bg-teal-50", pendidikan: "text-indigo-600 bg-indigo-50",
+    kesehatan: "text-green-600 bg-green-50", pendidikan: "text-indigo-600 bg-indigo-50",
   };
   const catIcons: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kesehatan: "🏥", pendidikan: "📚" };
 

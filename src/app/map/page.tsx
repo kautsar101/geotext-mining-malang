@@ -3,9 +3,12 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useRef } from "react";
 import { X, MapIcon, TrendingUp, TrendingDown } from "lucide-react";
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area } from "recharts";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, Brush } from "recharts";
 
 const API = "/api/db?table=clean_news_articles";
+const CATEGORY_LAYERS = ["sosial", "ekonomi", "pendidikan", "kesehatan"];
+const HEAT_COLORS = ["#f4fbef", "#e5f6d8", "#d1edbd", "#98d594", "#72c377", "#4bb062", "#2f984e", "#157f3b"];
+type MapLayer = "count" | `category:${string}`;
 
 function daysAgo(n: number) {
   const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10);
@@ -35,6 +38,8 @@ export default function MapPage() {
   const [kecSentByCat, setKecSentByCat] = useState<any[]>([]);
   const [kecTrend, setKecTrend] = useState<any[]>([]);
   const [allData, setAllData] = useState<any[]>([]);
+  const [kecCategoryStats, setKecCategoryStats] = useState<Record<string, Record<string, number>>>({});
+  const [activeLayer, setActiveLayer] = useState<MapLayer>("count");
 
   useEffect(() => {
     (async () => {
@@ -43,6 +48,7 @@ export default function MapPage() {
         setAllData(data);
 
         const kecCount: Record<string, number> = {};
+        const categoryByKec: Record<string, Record<string, number>> = {};
         const kec7d: Record<string, number> = {};
         const kecPrev7d: Record<string, number> = {};
 
@@ -50,6 +56,9 @@ export default function MapPage() {
           if (!r.primary_kecamatan) return;
           const k = r.primary_kecamatan;
           kecCount[k] = (kecCount[k] || 0) + 1;
+          const category = (r.category || "uncategorized").toLowerCase();
+          categoryByKec[k] = categoryByKec[k] || {};
+          categoryByKec[k][category] = (categoryByKec[k][category] || 0) + 1;
           const pd = r.published_date?.slice(0, 10);
           if (pd >= daysAgo(6)) kec7d[k] = (kec7d[k] || 0) + 1;
           if (pd >= daysAgo(13) && pd < daysAgo(6)) kecPrev7d[k] = (kecPrev7d[k] || 0) + 1;
@@ -61,15 +70,48 @@ export default function MapPage() {
           name, value,
           delta: (kec7d[name] || 0) - (kecPrev7d[name] || 0),
         })));
+        setKecCategoryStats(categoryByKec);
       } catch (e) { console.error(e); }
       setLoading(false);
     })();
   }, []);
 
+  function getLayerInfo(kecamatan: string) {
+    const total = stats.find(s => s.name.toLowerCase() === kecamatan.toLowerCase())?.value || 0;
+    if (activeLayer === "count") {
+      return {
+        value: total,
+        label: String(total),
+        hoverLabel: `${total} berita`,
+        detail: `${total.toLocaleString()} berita`,
+      };
+    }
+
+    const category = activeLayer.replace("category:", "");
+    const categoryKey = Object.keys(kecCategoryStats).find(k => k.toLowerCase() === kecamatan.toLowerCase()) || kecamatan;
+    const categoryCount = kecCategoryStats[categoryKey]?.[category] || 0;
+    const percent = total > 0 ? (categoryCount / total) * 100 : 0;
+    return {
+      value: percent,
+      label: `${percent.toFixed(0)}%`,
+      hoverLabel: `${categoryCount} dari ${total} berita (${percent.toFixed(1)}%)`,
+      detail: `${categoryCount.toLocaleString()} dari ${total.toLocaleString()} berita • ${percent.toFixed(1)}%`,
+    };
+  }
+
+  function getLayerTitle() {
+    if (activeLayer === "count") return "Jumlah Berita";
+    const category = activeLayer.replace("category:", "");
+    return `% ${category.charAt(0).toUpperCase()}${category.slice(1)}`;
+  }
+
   function selectKecamatan(name: string) {
     setSelectedKec(name);
     const filtered = allData.filter((r: any) => r.primary_kecamatan?.toLowerCase() === name.toLowerCase());
-    setKecArticles(filtered.slice(0, 10));
+    const sortedArticles = [...filtered].sort((a: any, b: any) =>
+      String(b.published_date || "").localeCompare(String(a.published_date || ""))
+    );
+    setKecArticles(sortedArticles);
 
     const sentCount: Record<string, number> = {};
     filtered.forEach((r: any) => { const s = r.sentiment || "unknown"; sentCount[s] = (sentCount[s] || 0) + 1; });
@@ -92,7 +134,7 @@ export default function MapPage() {
       dateSent[d] = (dateSent[d] || 0) + 1;
     });
     setKecTrend(
-      Object.entries(dateSent).sort(([a], [b]) => a.localeCompare(b)).slice(-20).map(([date, berita]) => ({
+      Object.entries(dateSent).sort(([a], [b]) => a.localeCompare(b)).map(([date, berita]) => ({
         date: fmtDate(date), berita,
       }))
     );
@@ -106,59 +148,59 @@ export default function MapPage() {
       if (mapInstanceRef.current || !mapRef.current) return;
 
       const isDark = document.documentElement.classList.contains("dark");
-      const tileUrl = isDark
-        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+      const isCategoryLayer = activeLayer !== "count";
+      const tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 
       const map = L.map(mapRef.current).setView([-8.1, 112.65], 10);
       L.tileLayer(tileUrl, {
-        attribution: isDark ? '&copy; <a href="https://carto.com/">CARTO</a>' : '&copy; OpenStreetMap',
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
         maxZoom: 14,
       }).addTo(map);
 
       const resp = await fetch("/geo/Kabupaten Malang-KECAMATAN.geojson");
       const geoData = await resp.json();
 
-      const values = stats.map(s => s.value).sort((a, b) => a - b);
+      const values = stats.map(s => getLayerInfo(s.name).value).sort((a, b) => a - b);
       const maxVal = Math.max(...values, 1);
-      const scaleBreaks = [0, Math.ceil(maxVal * 0.05), Math.ceil(maxVal * 0.15), Math.ceil(maxVal * 0.3), Math.ceil(maxVal * 0.5), Math.ceil(maxVal * 0.75), maxVal];
-      function getColor(count: number) {
-        const idx = scaleBreaks.findIndex(b => count <= b);
-        const colors = ["#FFF7ED", "#FFEDD5", "#FED7AA", "#FDBA74", "#FB923C", "#F97316", "#EA580C", "#DC2626"];
-        return colors[Math.min(idx, colors.length - 1)];
+      const scaleBreaks = isCategoryLayer
+        ? [0, 5, 10, 20, 40, 60, 80, 100]
+        : [0, Math.ceil(maxVal * 0.05), Math.ceil(maxVal * 0.15), Math.ceil(maxVal * 0.3), Math.ceil(maxVal * 0.5), Math.ceil(maxVal * 0.75), maxVal];
+      function getColor(value: number) {
+        const idx = scaleBreaks.findIndex(b => value <= b);
+        return HEAT_COLORS[Math.min(idx === -1 ? HEAT_COLORS.length - 1 : idx, HEAT_COLORS.length - 1)];
       }
 
       const geoLayer = L.geoJSON(geoData, {
         style: (feature: any) => {
           const name = feature.properties?.kecamatan || "";
-          const count = stats.find(s => s.name.toLowerCase() === name.toLowerCase())?.value || 0;
+          const layerInfo = getLayerInfo(name);
           return {
             color: isDark ? "#374151" : "#D1D5DB",
             weight: 1.2,
             fillOpacity: 0.75,
-            fillColor: getColor(count),
+            fillColor: getColor(layerInfo.value),
           };
         },
         onEachFeature: (feature: any, layer: any) => {
           const name = feature.properties?.kecamatan || "";
-          const count = stats.find(s => s.name.toLowerCase() === name.toLowerCase())?.value || 0;
+          const layerInfo = getLayerInfo(name);
 
           const tooltip = L.tooltip({
             permanent: true, direction: "center", className: "kec-label", offset: [0, 0],
-          }).setContent(`<div style="font-size:9px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.6);color:${count > 0 ? '#fff' : isDark ? '#9CA3AF' : '#6B7280'};background:transparent;border:none;box-shadow:none;text-align:center;line-height:1.2">${name}<br/><span style="font-size:10px">${count}</span></div>`);
+          }).setContent(`<div style="font-size:9px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.6);color:${layerInfo.value > 0 ? '#fff' : isDark ? '#9CA3AF' : '#6B7280'};background:transparent;border:none;box-shadow:none;text-align:center;line-height:1.2">${name}<br/><span style="font-size:10px">${layerInfo.label}</span></div>`);
           layer.bindTooltip(tooltip);
 
           layer.on("click", () => selectKecamatan(name));
           layer.on("mouseover", () => {
             layer.setStyle({ fillOpacity: 0.9, weight: 2.5 });
             if (layer.getTooltip()) {
-              layer.setTooltipContent(`<div style="font-size:10px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.6);color:#fff;background:transparent;border:none;box-shadow:none;text-align:center;line-height:1.2">${name}<br/><span style="font-size:11px;color:#F97316">${count} berita</span></div>`);
+              layer.setTooltipContent(`<div style="font-size:10px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.6);color:#fff;background:transparent;border:none;box-shadow:none;text-align:center;line-height:1.2">${name}<br/><span style="font-size:11px;color:#fff">${layerInfo.hoverLabel}</span></div>`);
             }
           });
           layer.on("mouseout", () => {
             layer.setStyle({ fillOpacity: 0.75, weight: 1.2 });
             if (layer.getTooltip()) {
-              layer.setTooltipContent(`<div style="font-size:9px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.6);color:${count > 0 ? '#fff' : isDark ? '#9CA3AF' : '#6B7280'};background:transparent;border:none;box-shadow:none;text-align:center;line-height:1.2">${name}<br/><span style="font-size:10px">${count}</span></div>`);
+              layer.setTooltipContent(`<div style="font-size:9px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.6);color:${layerInfo.value > 0 ? '#fff' : isDark ? '#9CA3AF' : '#6B7280'};background:transparent;border:none;box-shadow:none;text-align:center;line-height:1.2">${name}<br/><span style="font-size:10px">${layerInfo.label}</span></div>`);
             }
           });
         },
@@ -174,13 +216,15 @@ export default function MapPage() {
         div.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
         div.style.fontSize = "12px";
         div.style.color = isDark ? "#E5E7EB" : "#374151";
-        div.innerHTML = "<b>Jumlah Berita</b><br/>";
-        const legendColors = ["#FFF7ED", "#FFEDD5", "#FED7AA", "#FDBA74", "#FB923C", "#F97316", "#EA580C", "#DC2626"];
-        const labels = ["0", String(Math.ceil(maxVal * 0.05)), String(Math.ceil(maxVal * 0.15)), String(Math.ceil(maxVal * 0.3)), String(Math.ceil(maxVal * 0.5)), String(Math.ceil(maxVal * 0.75)), String(maxVal)];
-        for (let i = 0; i < labels.length; i++) {
+        div.innerHTML = `<b>${getLayerTitle()}</b><br/>`;
+        const unit = isCategoryLayer ? "%" : "";
+        for (let i = 0; i < scaleBreaks.length; i++) {
+          const start = i === 0 ? "0" : String(scaleBreaks[i - 1]);
+          const end = String(scaleBreaks[i]);
+          const label = i === 0 ? `0${unit}` : `${start}${unit} - ${end}${unit}`;
           div.innerHTML +=
-            `<i style="background:${legendColors[i]};width:14px;height:14px;display:inline-block;margin-right:4px;border-radius:2px;border:1px solid ${isDark ? '#4B5563' : '#D1D5DB'}"></i>` +
-            (i === 0 ? "0" : `${labels[i - 1]}+`) + (i < labels.length - 1 ? " – " : "+") + `${labels[i]}<br/>`;
+            `<i style="background:${HEAT_COLORS[i]};width:14px;height:14px;display:inline-block;margin-right:4px;border-radius:2px;border:1px solid ${isDark ? '#4B5563' : '#D1D5DB'}"></i>` +
+            `${label}<br/>`;
         }
         return div;
       };
@@ -188,15 +232,49 @@ export default function MapPage() {
       mapInstanceRef.current = map;
     })();
     return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
-  }, [loading, stats]);
+  }, [loading, stats, activeLayer, kecCategoryStats]);
 
-  const sentColors = ["#14B8A6", "#EAB308", "#E11D48", "#9C9590"];
+  const sentColors = ["#4bb062", "#EAB308", "#E11D48", "#9C9590"];
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>Peta Spasial</h2>
         <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Klik kecamatan untuk melihat detail berita dan analisis sentimen</p>
+      </div>
+
+      <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Layer Peta</h3>
+            <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+              Aktif: {getLayerTitle()}
+            </p>
+          </div>
+          <div className="hidden sm:flex items-center gap-1">
+            {HEAT_COLORS.map((color, i) => (
+              <span key={i} className="h-2.5 w-6 first:rounded-l-full last:rounded-r-full" style={{ backgroundColor: color }} />
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors"
+            style={{ backgroundColor: activeLayer === "count" ? "var(--accent)" : "var(--bg-primary)", color: activeLayer === "count" ? "#fff" : "var(--text-secondary)" }}>
+            <input type="radio" name="map-layer" checked={activeLayer === "count"} onChange={() => setActiveLayer("count")} className="h-3 w-3" />
+            Jumlah Berita
+          </label>
+          {CATEGORY_LAYERS.map((category) => {
+            const layerId = `category:${category}` as MapLayer;
+            const active = activeLayer === layerId;
+            return (
+              <label key={category} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-xs capitalize transition-colors"
+                style={{ backgroundColor: active ? "var(--accent)" : "var(--bg-primary)", color: active ? "#fff" : "var(--text-secondary)" }}>
+                <input type="radio" name="map-layer" checked={active} onChange={() => setActiveLayer(layerId)} className="h-3 w-3" />
+                % {category}
+              </label>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex gap-4">
@@ -221,14 +299,15 @@ export default function MapPage() {
             {/* Real Date Trend */}
             <div className="mb-4">
               <h4 className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Tren Berita</h4>
-              <ResponsiveContainer width="100%" height={100}>
+              <ResponsiveContainer width="100%" height={140}>
                 <AreaChart data={kecTrend}>
-                  <defs><linearGradient id="wkGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#F97316" stopOpacity={0.3} /><stop offset="95%" stopColor="#F97316" stopOpacity={0} /></linearGradient></defs>
+                  <defs><linearGradient id="wkGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4bb062" stopOpacity={0.3} /><stop offset="95%" stopColor="#4bb062" stopOpacity={0} /></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="date" tick={{ fontSize: 7, fill: "var(--text-muted)" }} />
                   <YAxis hide />
                   <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 10 }} />
-                  <Area type="monotone" dataKey="berita" stroke="#F97316" fill="url(#wkGrad)" strokeWidth={2} dot={{ r: 2, fill: "#F97316" }} />
+                  <Area type="monotone" dataKey="berita" stroke="#4bb062" fill="url(#wkGrad)" strokeWidth={2} dot={false} />
+                  <Brush dataKey="date" height={24} stroke="#157f3b" fill="var(--bg-card)" travellerWidth={8} gap={1} style={{ color: "var(--text-secondary)", fontSize: 8 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -265,7 +344,7 @@ export default function MapPage() {
                     <XAxis dataKey="name" tick={{ fontSize: 7, fill: "var(--text-muted)" }} />
                     <YAxis hide />
                     <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 9 }} />
-                    <Bar dataKey="positive" stackId="a" fill="#14B8A6" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="positive" stackId="a" fill="#4bb062" radius={[0, 0, 0, 0]} />
                     <Bar dataKey="neutral" stackId="a" fill="#EAB308" />
                     <Bar dataKey="negative" stackId="a" fill="#E11D48" radius={[4, 4, 0, 0]} />
                   </BarChart>
@@ -277,7 +356,7 @@ export default function MapPage() {
 
             {/* News Table */}
             <div>
-              <h4 className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Berita Terbaru</h4>
+              <h4 className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>List Berita</h4>
               <div className="space-y-1 max-h-[140px] overflow-y-auto">
                 {kecArticles.map((a: any, i: number) => (
                   <a key={i} href={a.url} target="_blank" rel="noopener noreferrer"
@@ -310,21 +389,27 @@ export default function MapPage() {
       <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Daftar Kecamatan</h3>
         <div className="grid grid-cols-4 gap-2">
-          {statsWithDelta.map((s, i) => (
-            <button key={i} onClick={() => selectKecamatan(s.name)}
-              className={`flex items-center justify-between px-3 py-1.5 rounded-lg transition-all text-left ${selectedKec === s.name ? "ring-2 ring-orange-500" : ""}`}
-              style={{ backgroundColor: "var(--bg-primary)" }}>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>{s.name}</span>
-                <span className={`flex items-center gap-0.5 text-[10px] font-medium ${s.delta > 0 ? "text-emerald-600" : s.delta < 0 ? "text-red-600" : "text-gray-400"}`}>
-                  {s.delta > 0 ? <TrendingUp size={10} /> : s.delta < 0 ? <TrendingDown size={10} /> : null}
-                  <span className="text-[8px] opacity-60">7d</span>
-                  {s.delta !== 0 ? (s.delta > 0 ? "+" : "") + s.delta : "—"}
-                </span>
-              </div>
-              <span className="text-xs font-semibold flex-shrink-0 ml-2" style={{ color: "var(--accent)" }}>{s.value}</span>
-            </button>
-          ))}
+          {statsWithDelta.map((s, i) => {
+            const layerInfo = getLayerInfo(s.name);
+            return (
+              <button key={i} onClick={() => selectKecamatan(s.name)}
+                className={`flex items-center justify-between px-3 py-1.5 rounded-lg transition-all text-left ${selectedKec === s.name ? "ring-2 ring-orange-500" : ""}`}
+                style={{ backgroundColor: "var(--bg-primary)" }}>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>{s.name}</span>
+                  <span className={`flex items-center gap-0.5 text-[10px] font-medium ${s.delta > 0 ? "text-emerald-600" : s.delta < 0 ? "text-red-600" : "text-gray-400"}`}>
+                    {s.delta > 0 ? <TrendingUp size={10} /> : s.delta < 0 ? <TrendingDown size={10} /> : null}
+                    <span className="text-[8px] opacity-60">7d</span>
+                    {s.delta !== 0 ? (s.delta > 0 ? "+" : "") + s.delta : "—"}
+                  </span>
+                  {activeLayer !== "count" && (
+                    <span className="text-[9px] truncate" style={{ color: "var(--text-muted)" }}>{layerInfo.detail}</span>
+                  )}
+                </div>
+                <span className="text-xs font-semibold flex-shrink-0 ml-2" style={{ color: "var(--accent)" }}>{layerInfo.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

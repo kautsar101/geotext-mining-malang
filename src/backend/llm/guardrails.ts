@@ -1,5 +1,58 @@
 import type { ChatMessage } from './types';
 
+const CORE_DOMAIN_KEYWORDS = [
+  'malang',
+  'kabupaten',
+  'kecamatan',
+  'berita',
+  'artikel',
+  'sumber',
+  'sentimen',
+  'peta',
+  'spasial',
+  'geotext',
+  'mining',
+  'dashboard',
+  'banjir',
+  'kecelakaan',
+  'sekolah',
+];
+
+const CONTEXTUAL_KEYWORDS = [
+  'kategori',
+  'ekonomi',
+  'sosial',
+  'kesehatan',
+  'pendidikan',
+  'statistik',
+  'jumlah',
+  'total',
+  'tren',
+  'isu',
+  'wilayah',
+  'daerah',
+  'database',
+  'data',
+];
+
+const FOLLOW_UP_KEYWORDS = [
+  'itu',
+  'tersebut',
+  'lanjut',
+  'jelaskan',
+  'detail',
+  'rangkum',
+  'bandingkan',
+  'buat tabel',
+  'simpulkan',
+  'kenapa',
+  'bagaimana',
+  'apa maksudnya',
+];
+
+export const OUT_OF_CONTEXT_RESPONSE =
+  'Maaf, saya hanya bisa membantu pertanyaan seputar berita daerah Kabupaten Malang, statistik database berita, sentimen, kategori, kecamatan, peta spasial, dan analisis geotext mining. Silakan tanyakan topik dalam konteks tersebut.';
+
 export function sanitizeInput(text: string): string {
   return text
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
@@ -42,6 +95,32 @@ export function isGreetingOnly(query: string): boolean {
   );
 }
 
+function hasDomainKeyword(text: string): boolean {
+  const lowered = text.toLowerCase();
+  if (CORE_DOMAIN_KEYWORDS.some((keyword) => lowered.includes(keyword))) return true;
+
+  const hasContextualKeyword = CONTEXTUAL_KEYWORDS.some((keyword) => lowered.includes(keyword));
+  const hasDataContext = /(berita|artikel|database|data|kecamatan|kategori|sentimen|malang|geotext|spasial|peta)/i.test(lowered);
+  return hasContextualKeyword && hasDataContext;
+}
+
+function isFollowUp(query: string): boolean {
+  const lowered = query.toLowerCase();
+  return FOLLOW_UP_KEYWORDS.some((keyword) => lowered.includes(keyword));
+}
+
+export function isInProjectContext(query: string, recentMessages: ChatMessage[] = []): boolean {
+  if (isGreetingOnly(query)) return true;
+  if (hasDomainKeyword(query)) return true;
+
+  const recentContext = recentMessages
+    .slice(-4)
+    .map((message) => message.content)
+    .join(' ');
+
+  return isFollowUp(query) && hasDomainKeyword(recentContext);
+}
+
 export function cleanModelText(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -49,4 +128,3 @@ export function cleanModelText(text: string): string {
   }
   return trimmed.slice(0, 8000);
 }
-

@@ -8,11 +8,11 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 const API = "/api/db?table=clean_news_articles";
 
 const C = {
-  c2: "#14B8A6", c5: "#E11D48", c6: "#EAB308",
+  c2: "#4bb062", c5: "#E11D48", c6: "#EAB308",
   tm: "#9C9590", ts: "#6B6560", bd: "#E5E0D8", bg: "#FFFFFF",
 };
 function getDark() {
-  return { c2: "#14B8A6", c5: "#FB7185", c6: "#FACC15", tm: "#78716C", ts: "#A8A29E", bd: "#44403C", bg: "#292524" };
+  return { c2: "#4bb062", c5: "#FB7185", c6: "#FACC15", tm: "#78716C", ts: "#A8A29E", bd: "#44403C", bg: "#292524" };
 }
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }

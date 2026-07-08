@@ -1,4 +1,11 @@
-import { cleanModelText, isGreetingOnly, normalizeMessages, sanitizeInput } from './guardrails';
+import {
+  cleanModelText,
+  isGreetingOnly,
+  isInProjectContext,
+  normalizeMessages,
+  OUT_OF_CONTEXT_RESPONSE,
+  sanitizeInput,
+} from './guardrails';
 import { compactSessionMemory, getSessionMemory, recordExchange } from './memory';
 import { buildFinalMessages } from './prompts';
 import { callLLM, isProviderId, PROVIDERS } from './providers';
@@ -40,11 +47,31 @@ export async function handleLLMRequest(
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey : '';
     const sid = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : sessionId;
     const includeDebug = body.debug === true;
+    const clientMessages = normalizeMessages(body.messages);
 
     queryForLog = query;
 
     if (!query) {
       return { body: { error: 'Query diperlukan' }, status: 400 };
+    }
+
+    if (!isInProjectContext(query, clientMessages)) {
+      routeForLog = 'out_of_context';
+      await recordExchange({
+        sessionId: sid,
+        query,
+        route: routeForLog,
+        response: OUT_OF_CONTEXT_RESPONSE,
+        latencyMs: Date.now() - t0,
+      });
+
+      return {
+        body: {
+          response: OUT_OF_CONTEXT_RESPONSE,
+          sources: [],
+          ...(includeDebug ? { debug: { intents: [], route: routeForLog, latencyMs: Date.now() - t0 } } : {}),
+        },
+      };
     }
 
     if (!isProviderId(providerRaw)) {
@@ -58,7 +85,6 @@ export async function handleLLMRequest(
     }
 
     const memory = await getSessionMemory(sid);
-    const clientMessages = normalizeMessages(body.messages);
     const recentMessages = memory.recentMessages.length > 0 ? memory.recentMessages : clientMessages;
 
     let intents: LLMIntent[] = ['chat'];
