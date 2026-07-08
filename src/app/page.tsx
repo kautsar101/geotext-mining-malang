@@ -134,6 +134,23 @@ export default function Dashboard() {
   const pRatio = stats.posRatio || 0;
   const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 };
   const SENT_COLORS = [cc.c2, cc.c6, cc.c5];
+  const SOURCE_COLORS = [cc.c2, cc.c3, cc.c4, cc.c5, cc.c6, cc.tm];
+  const sourceTotal = sourceData.reduce((s, d) => s + d.value, 0);
+  const sourceTop = sourceData.slice(0, 5);
+  const sourceOtherBreakdown = sourceData.slice(5).map((d, i) => ({
+    ...d,
+    color: SOURCE_COLORS[(i + 5) % SOURCE_COLORS.length],
+    percent: sourceTotal > 0 ? (d.value / sourceTotal) * 100 : 0,
+  }));
+  const sourceOtherValue = sourceData.slice(5).reduce((s, d) => s + d.value, 0);
+  const sourcePieData = [
+    ...sourceTop,
+    ...(sourceOtherValue > 0 ? [{ name: "Lainnya", value: sourceOtherValue }] : []),
+  ].map((d, i) => ({
+    ...d,
+    color: SOURCE_COLORS[i % SOURCE_COLORS.length],
+    percent: sourceTotal > 0 ? (d.value / sourceTotal) * 100 : 0,
+  }));
 const CAT_COLORS: Record<string, string> = {
   ekonomi: "text-blue-600 bg-blue-50", sosial: "text-purple-600 bg-purple-50",
   kesehatan: "text-teal-600 bg-teal-50", pendidikan: "text-indigo-600 bg-indigo-50",
@@ -405,29 +422,62 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
         </div>
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Proporsi Sumber Berita</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie data={sourceData} cx="50%" cy="50%" innerRadius={45} outerRadius={85}
-                paddingAngle={3} dataKey="value"
-                label={({ name, value, percent }: any) => `${name}: ${value.toLocaleString()} (${(percent * 100).toFixed(0)}%)`}
-                labelLine={{ stroke: cc.tm, strokeWidth: 0.5, strokeDasharray: "2 2" }}>
-                {sourceData.map((_, i) => <Cell key={i} fill={[cc.c2, cc.c3, cc.c4, cc.c5, cc.c6, cc.tm][i % 6]} />)}
-              </Pie>
-              <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
-                <tspan x="50%" dy="-0.4em" fontSize={18} fontWeight={700} fill={cc.ts}>
-                  {sourceData.reduce((s, d) => s + d.value, 0).toLocaleString()}
-                </tspan>
-                <tspan x="50%" dy="1.4em" fontSize={10} fill={cc.tm}>Total</tspan>
-              </text>
-              <Tooltip formatter={(v: any, name: any) => {
-                  const total = sourceData.reduce((s, d) => s + d.value, 0);
-                  const pct = total > 0 ? ((v / total) * 100).toFixed(1) : "0";
-                  return [`${v.toLocaleString()} artikel (${pct}%)`, name] as [string, string];
-                }}
-                contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-              <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 11 }}>{v}</span>} />
-            </PieChart>
-          </ResponsiveContainer>
+          <div className="grid grid-cols-[minmax(0,1fr)_180px] gap-4 items-center">
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie data={sourcePieData} cx="50%" cy="50%" innerRadius={55} outerRadius={92}
+                  paddingAngle={3} dataKey="value">
+                  {sourcePieData.map((d) => <Cell key={d.name} fill={d.color} />)}
+                </Pie>
+                <text x="50%" y="48%" textAnchor="middle" dominantBaseline="middle">
+                  <tspan x="50%" dy="0" fontSize={20} fontWeight={700} fill={cc.ts}>
+                    {sourceTotal.toLocaleString()}
+                  </tspan>
+                  <tspan x="50%" dy="1.45em" fontSize={10} fill={cc.tm}>Total</tspan>
+                </text>
+                <Tooltip formatter={(v: unknown, name: unknown) => {
+                    const value = Number(v);
+                    const safeValue = Number.isFinite(value) ? value : 0;
+                    const pct = sourceTotal > 0 ? ((safeValue / sourceTotal) * 100).toFixed(1) : "0";
+                    return [`${safeValue.toLocaleString()} artikel (${pct}%)`, String(name)] as [string, string];
+                  }}
+                  contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="max-h-[260px] overflow-y-auto pr-1 space-y-2">
+              {sourcePieData.filter((d) => d.name !== "Lainnya").map((d) => (
+                <div key={d.name} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: `${d.color}12` }}>
+                  <span className="mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-medium" title={d.name} style={{ color: "var(--text-primary)" }}>{d.name}</p>
+                    <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                      {d.value.toLocaleString()} artikel • {d.percent.toFixed(1)}%
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {sourceOtherBreakdown.length > 0 && (
+                <div className="pt-2">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    Breakdown lainnya
+                  </p>
+                  <div className="space-y-1.5">
+                    {sourceOtherBreakdown.map((d) => (
+                      <div key={d.name} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: `${cc.tm}10` }}>
+                        <span className="mt-1.5 h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[10px] font-medium" title={d.name} style={{ color: "var(--text-secondary)" }}>{d.name}</p>
+                          <p className="text-[9px]" style={{ color: "var(--text-muted)" }}>
+                            {d.value.toLocaleString()} artikel • {d.percent.toFixed(1)}%
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
