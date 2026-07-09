@@ -1,6 +1,6 @@
 import { supabase } from '@/backend/db/supabase';
-import { callLLM, generateEmbedding } from './providers';
-import { safeJsonParse, sanitizeInput } from './guardrails';
+import { generateEmbedding } from './providers';
+import { sanitizeInput } from './guardrails';
 import type { Source } from './types';
 
 const KECAMATAN = [
@@ -14,6 +14,11 @@ const KECAMATAN = [
 
 const VALID_KATEGORI = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'];
 const VALID_SENTIMEN = ['positive', 'negative', 'neutral'];
+const KEYWORD_STOPWORDS = [
+  'carikan', 'cari', 'berita', 'artikel', 'tentang', 'kabupaten', 'malang',
+  'kecamatan', 'saya', 'tolong', 'yang', 'dan', 'atau', 'dengan', 'untuk',
+  'sertakan', 'sumber', 'di', 'ke', 'dari',
+];
 
 type ParsedQuery = {
   kecamatan: string | null;
@@ -59,46 +64,28 @@ export async function parseRetrievalQuery(
   query: string,
 ): Promise<ParsedQuery> {
   const safeQuery = sanitizeInput(query);
-  const fallback: ParsedQuery = {
-    kecamatan: null,
-    kategori: null,
-    sentimen: null,
-    keywords: safeQuery.toLowerCase().split(/\s+/).filter((w) => w.length > 2).slice(0, 8),
+  const lowered = safeQuery.toLowerCase();
+  const kecamatan = KECAMATAN.find((name) => lowered.includes(name.toLowerCase())) || null;
+  const kategori = VALID_KATEGORI.find((value) => lowered.includes(value)) || null;
+  const sentimen = lowered.includes('positif')
+    ? 'positive'
+    : lowered.includes('negatif')
+      ? 'negative'
+      : lowered.includes('netral')
+        ? 'neutral'
+        : VALID_SENTIMEN.find((value) => lowered.includes(value)) || null;
+  const keywords = lowered
+    .split(/\s+/)
+    .map(cleanSearchTerm)
+    .filter((word) => word.length > 2 && !KEYWORD_STOPWORDS.includes(word))
+    .slice(0, 8);
+
+  return {
+    kecamatan: canonicalKecamatan(kecamatan),
+    kategori,
+    sentimen,
+    keywords: keywords.length > 0 ? keywords : lowered.split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8),
   };
-
-  const prompt = `Anda adalah parser query berita daerah. Balas HANYA JSON valid.
-
-Format:
-{"kecamatan":null,"kategori":null,"sentimen":null,"keywords":["kata"]}
-
-Kategori valid: ${VALID_KATEGORI.join(', ')}.
-Sentimen valid: ${VALID_SENTIMEN.join(', ')}.
-Kecamatan Kabupaten Malang: ${KECAMATAN.join(', ')}.
-
-Query:
-"""${safeQuery}"""`;
-
-  try {
-    const result = await callLLM([{ role: 'user', content: prompt }], 120, 0);
-    const parsed = safeJsonParse<ParsedQuery>(result, fallback);
-    const kategori = typeof parsed.kategori === 'string' && VALID_KATEGORI.includes(parsed.kategori.toLowerCase())
-      ? parsed.kategori.toLowerCase()
-      : null;
-    const sentimen = typeof parsed.sentimen === 'string' && VALID_SENTIMEN.includes(parsed.sentimen.toLowerCase())
-      ? parsed.sentimen.toLowerCase()
-      : null;
-
-    return {
-      kecamatan: canonicalKecamatan(parsed.kecamatan),
-      kategori,
-      sentimen,
-      keywords: Array.isArray(parsed.keywords)
-        ? parsed.keywords.map((k) => cleanSearchTerm(String(k))).filter(Boolean).slice(0, 8)
-        : fallback.keywords,
-    };
-  } catch {
-    return fallback;
-  }
 }
 
 export async function retrieveSources(

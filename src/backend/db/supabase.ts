@@ -8,6 +8,12 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 type AdminDatabase = {
   public: {
     Tables: {
+      chat_logs: {
+        Row: Record<string, unknown>;
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+        Relationships: [];
+      };
       llm_api_keys: {
         Row: {
           id: string;

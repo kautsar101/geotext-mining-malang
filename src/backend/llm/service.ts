@@ -40,6 +40,9 @@ function toFriendlyLLMError(error: string): string {
   if (lowered.includes('tidak ada groq api key') || lowered.includes('semua groq api key')) {
     return 'Maaf, layanan AI sedang tidak tersedia. Coba lagi nanti.';
   }
+  if (lowered.includes('empty response')) {
+    return 'Maaf, AI belum menghasilkan jawaban. Coba ulangi pertanyaan dengan sedikit lebih spesifik.';
+  }
   return 'Maaf, terjadi kendala saat memproses jawaban. Coba lagi beberapa saat lagi.';
 }
 
@@ -99,7 +102,7 @@ export async function handleLLMRequest(
 
     let intents: LLMIntent[] = ['chat'];
     if (!isGreetingOnly(query)) {
-      const routed = await classifyIntents(query, []);
+      const routed = await classifyIntents(query);
       intents = routed.intents;
     }
 

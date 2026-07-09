@@ -38,8 +38,12 @@ export async function callLLM(
 
     if (res.ok) {
       const data = await res.json();
+      const content = data.choices?.[0]?.message?.content || '';
       await markGroqKeySuccess(key.id);
-      return data.choices?.[0]?.message?.content || '';
+      if (!content.trim()) {
+        throw new Error('Groq empty response');
+      }
+      return content;
     }
 
     const err = await res.text();

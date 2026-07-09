@@ -1,4 +1,4 @@
-import { supabase } from '@/backend/db/supabase';
+import { getSupabaseAdmin, supabase } from '@/backend/db/supabase';
 import { callLLM } from './providers';
 import type { ChatMessage } from './types';
 
@@ -66,7 +66,8 @@ export async function recordExchange(input: {
   error?: string;
 }) {
   try {
-    await supabase.from('chat_logs').insert({
+    const supabaseAdmin = getSupabaseAdmin();
+    const { error } = await supabaseAdmin.from('chat_logs').insert({
       session_id: input.sessionId,
       query_raw: input.query,
       route: input.route,
@@ -77,7 +78,9 @@ export async function recordExchange(input: {
       latency_ms: input.latencyMs,
       error: input.error,
     });
-  } catch {
+    if (error) throw error;
+  } catch (error) {
+    console.error('Gagal menyimpan chat log', error);
     // Logging must never break chat.
   }
 }

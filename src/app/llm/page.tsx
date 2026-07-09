@@ -147,7 +147,7 @@ export default function LLMPage() {
       }
 
       if (data.error) {
-        setMessages(prev => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
+        setMessages(prev => [...prev, { role: "assistant", content: data.error || "Maaf, terjadi kendala saat memproses jawaban." }]);
       } else {
         setMessages(prev => [...prev, { role: "assistant", content: data.response || "Maaf, respons kosong.", sources: data.sources || [], debug: data.debug }]);
       }
