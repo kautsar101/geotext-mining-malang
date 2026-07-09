@@ -42,6 +42,11 @@ async function readLLMStream(
   response: Response,
   onProcess: (label: string) => void,
 ): Promise<LLMResponsePayload> {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("text/event-stream")) {
+    return response.json() as Promise<LLMResponsePayload>;
+  }
+
   if (!response.body) return response.json() as Promise<LLMResponsePayload>;
 
   const reader = response.body.getReader();
@@ -121,13 +126,26 @@ export default function LLMPage() {
 
     try {
       const history = messages.slice(-5).map(m => ({ role: m.role, content: m.content }));
+      const payload = { query: userMsg, messages: history };
 
       const res = await fetch("/api/llm", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-session-id": sessionId.current },
-        body: JSON.stringify({ query: userMsg, messages: history, stream: true }),
+        body: JSON.stringify({ ...payload, stream: true }),
       });
-      const data = await readLLMStream(res, setActiveProcess);
+      let data: LLMResponsePayload;
+
+      try {
+        data = await readLLMStream(res, setActiveProcess);
+      } catch {
+        setActiveProcess("Menyusun jawaban...");
+        const fallbackRes = await fetch("/api/llm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-session-id": sessionId.current },
+          body: JSON.stringify(payload),
+        });
+        data = await fallbackRes.json();
+      }
 
       if (data.error) {
         setMessages(prev => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
