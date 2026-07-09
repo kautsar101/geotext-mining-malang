@@ -27,7 +27,7 @@ type LLMResponsePayload = {
 };
 
 const AI_WARNING_TEXT = "Jawaban AI dapat mengandung kesalahan. Harap cross-check dengan sumber berita asli melalui link yang tersedia.";
-const MEMORY_NOTICE_TEXT = "Untuk menjaga respons tetap cepat dan efisien, chatbot tidak menyimpan konteks percakapan sebelumnya. Mohon tulis pertanyaan secara lengkap dan jelas dalam satu pesan.";
+const MEMORY_NOTICE_TEXT = "Untuk menjaga performa dan efisiensi, chatbot hanya menyimpan konteks percakapan dalam kapasitas terbatas. Mohon sertakan ulang informasi penting jika diskusi sudah berlangsung panjang.";
 
 function parseSSEBlock(block: string): { event: string; data: unknown } | null {
   const event = block.split('\n').find((line) => line.startsWith('event: '))?.slice(7).trim();
