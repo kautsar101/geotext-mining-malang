@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Geist, Geist_Mono } from "next/font/google";
+import Image from "next/image";
 import { LayoutGrid, Map, BarChart3, Newspaper, MessageSquare, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
 import "./globals.css";
 
@@ -48,18 +49,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="id">
+      <head>
+        <link rel="icon" href="/favicon.png" type="image/png" />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} style={bodyStyle}>
         <div className="flex h-screen overflow-hidden" style={shellStyle}>
           <aside style={{ backgroundColor: "var(--bg-sidebar)", borderRight: "1px solid var(--border)" }}
             className={`flex-shrink-0 flex flex-col transition-all duration-300 ${collapsed ? "w-20" : "w-64"}`}>
-            <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className={`flex items-center p-4 ${collapsed ? "flex-col gap-2 justify-center" : "justify-between"}`} style={{ borderBottom: "1px solid var(--border)" }}>
               {!collapsed && (
-                <div>
-                  <h1 className="text-lg font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
-                    Geotext<span style={{ color: "var(--accent)" }}> Mining</span>
-                  </h1>
-                  <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>Malang</p>
+                <div className="flex items-center gap-2">
+                  <Image src="/logo.png" alt="GeoText Mining Logo" width={52} height={52} className="flex-shrink-0" />
+                  <div>
+                    <h1 className="text-lg font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
+                      Geotext<span style={{ color: "var(--accent)" }}> Mining</span>
+                    </h1>
+                    <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>Malang</p>
+                  </div>
                 </div>
+              )}
+              {collapsed && (
+                <Image src="/logo.png" alt="GeoText Mining Logo" width={56} height={56} className="flex-shrink-0" unoptimized />
               )}
               <button onClick={() => setCollapsed(!collapsed)}
                 className="p-1.5 rounded-lg transition-colors"
