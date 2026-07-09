@@ -2,7 +2,7 @@ import { getSupabaseAdmin, supabase } from '@/backend/db/supabase';
 import { callLLM } from './providers';
 import type { ChatMessage } from './types';
 
-const RECENT_LIMIT = 5;
+const RECENT_LIMIT = 2;
 const COMPACT_AFTER_LOGS = 14;
 
 export type SessionMemory = {

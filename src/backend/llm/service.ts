@@ -6,7 +6,7 @@ import {
   OUT_OF_CONTEXT_RESPONSE,
   sanitizeInput,
 } from './guardrails';
-import { recordExchange } from './memory';
+import { getSessionMemory, recordExchange } from './memory';
 import { buildFinalMessages } from './prompts';
 import { callLLM } from './providers';
 import { classifyIntents } from './router';
@@ -197,6 +197,10 @@ export async function handleLLMRequest(
       };
     }
 
+    // Load session memory: 2 chat terakhir sebagai konteks
+    const memory = await getSessionMemory(sid);
+    const recentMessages = memory.recentMessages;
+
     let sqlContext = '';
     let sqlGenerated = '';
     let sqlResult: unknown = null;
@@ -274,7 +278,7 @@ export async function handleLLMRequest(
     const finalMessages = buildFinalMessages({
       query,
       intents,
-      recentMessages: [],
+      recentMessages,
       sqlContext,
       ragSources: sources,
       searchInfo,
