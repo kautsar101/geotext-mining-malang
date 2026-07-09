@@ -1,6 +1,6 @@
 import { supabase } from '@/backend/db/supabase';
 import { callLLM } from './providers';
-import type { ChatMessage, ProviderId } from './types';
+import type { ChatMessage } from './types';
 
 const RECENT_LIMIT = 5;
 const COMPACT_AFTER_LOGS = 14;
@@ -83,8 +83,6 @@ export async function recordExchange(input: {
 }
 
 export async function compactSessionMemory(
-  provider: ProviderId,
-  apiKey: string,
   sessionId: string,
   existingSummary: string,
   logCount: number,
@@ -118,7 +116,7 @@ ${existingSummary || '-'}
 Percakapan terbaru:
 ${transcript}`;
 
-    const summary = await callLLM(provider, apiKey, [{ role: 'user', content: prompt }], 350, 0.1);
+    const summary = await callLLM([{ role: 'user', content: prompt }], 350, 0.1);
     if (!summary.trim()) return;
 
     await supabase.from('chat_sessions').upsert({

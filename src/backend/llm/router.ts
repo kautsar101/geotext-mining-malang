@@ -1,6 +1,6 @@
 import { callLLM } from './providers';
 import { safeJsonParse, sanitizeInput } from './guardrails';
-import type { ChatMessage, LLMIntent, ProviderId } from './types';
+import type { ChatMessage, LLMIntent } from './types';
 
 type RouterResult = {
   intents: LLMIntent[];
@@ -27,8 +27,6 @@ function fallbackIntents(query: string): LLMIntent[] {
 }
 
 export async function classifyIntents(
-  provider: ProviderId,
-  apiKey: string,
   query: string,
   recentMessages: ChatMessage[],
 ): Promise<RouterResult> {
@@ -58,7 +56,7 @@ Query:
 """${safeQuery}"""`;
 
   try {
-    const result = await callLLM(provider, apiKey, [{ role: 'user', content: prompt }], 120, 0);
+    const result = await callLLM([{ role: 'user', content: prompt }], 120, 0);
     const parsed = safeJsonParse<RouterResult>(result, { intents: fallbackIntents(query) });
     const valid = (parsed.intents || []).filter((i): i is LLMIntent =>
       i === 'chat' || i === 'rag' || i === 'sql',

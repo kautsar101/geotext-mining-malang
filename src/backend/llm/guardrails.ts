@@ -38,7 +38,14 @@ const CONTEXTUAL_KEYWORDS = [
 const FOLLOW_UP_KEYWORDS = [
   'itu',
   'tersebut',
+  'iya',
+  'ya',
+  'yup',
+  'oke',
+  'cari',
+  'carikan',
   'lanjut',
+  'lanjutkan',
   'jelaskan',
   'detail',
   'rangkum',
@@ -121,8 +128,34 @@ export function isInProjectContext(query: string, recentMessages: ChatMessage[] 
   return isFollowUp(query) && hasDomainKeyword(recentContext);
 }
 
-export function cleanModelText(text: string): string {
-  const trimmed = text.trim();
+function stripMarkdownCitationLinks(text: string): string {
+  return text
+    .replace(/\[\[(\d+)\]\]\(https?:\/\/[^)]+\)/g, '[$1]')
+    .replace(/\[(\d+)\]\(https?:\/\/[^)]+\)/g, '[$1]');
+}
+
+function stripManualReferences(text: string): string {
+  const lines = text.split('\n');
+  const cutIndex = lines.findIndex((line) =>
+    /^\s*(referensi|daftar referensi|sumber berita)\s*:?\s*$/i.test(line.trim()) ||
+    /^\s*\[\d+\]\s*$/.test(stripMarkdownCitationLinks(line).trim()) ||
+    /^\s*\[\d+\]\s*judul\s*:/i.test(stripMarkdownCitationLinks(line).trim()),
+  );
+
+  if (cutIndex < 0) return text;
+  return lines.slice(0, cutIndex).join('\n').trim();
+}
+
+function stripUnrequestedTable(text: string, query = ''): string {
+  if (/\b(tabel|table)\b/i.test(query)) return text;
+  return text
+    .replace(/\n+Berikut (adalah )?tabel ringkasan[\s\S]*$/i, '')
+    .replace(/\n+\|?\s*No\s*\|?\s*Judul[\s\S]*$/i, '')
+    .trim();
+}
+
+export function cleanModelText(text: string, query = ''): string {
+  const trimmed = stripUnrequestedTable(stripManualReferences(stripMarkdownCitationLinks(text)), query).trim();
   if (!trimmed) {
     return 'Maaf, saya belum bisa membuat jawaban dari konteks yang tersedia.';
   }

@@ -2,26 +2,82 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Send, Key, Bot, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
+import { Loader2, Send, Maximize2, Minimize2 } from "lucide-react";
 import InlineContent from "@/frontend/components/InlineContent";
 
-const KEY_LINKS: Record<string, string> = {
-  groq: "https://console.groq.com/keys",
-  gemini: "https://aistudio.google.com/apikey",
-  deepseek: "https://platform.deepseek.com/api_keys",
-  openai: "https://platform.openai.com/api-keys",
-  claude: "https://console.anthropic.com/",
+type Source = {
+  id: number;
+  url?: string;
+  source?: string;
+  title?: string;
 };
 
-const PROVIDERS = [
-  { id: "groq", label: "Groq (Llama 3.3 70B)", keyPrefix: "gsk_", desc: "Gratis — daftar di console.groq.com" },
-  { id: "gemini", label: "Gemini 2.0 Flash", keyPrefix: "AIza", desc: "Butuh API Key" },
-  { id: "deepseek", label: "DeepSeek V4 Flash", keyPrefix: "sk-", desc: "Butuh API Key" },
-  { id: "openai", label: "OpenAI GPT-4o Mini", keyPrefix: "sk-", desc: "Butuh API Key" },
-  { id: "claude", label: "Claude 3 Haiku", keyPrefix: "sk-ant-", desc: "Butuh API Key" },
-];
+type ChatMessage = {
+  role: string;
+  content: string;
+  sources?: Source[];
+  debug?: unknown;
+};
 
-const STORAGE_PREFIX = "llm_provider_";
+type LLMResponsePayload = {
+  response?: string;
+  sources?: Source[];
+  debug?: unknown;
+  error?: string;
+};
+
+function parseSSEBlock(block: string): { event: string; data: unknown } | null {
+  const event = block.split('\n').find((line) => line.startsWith('event: '))?.slice(7).trim();
+  const dataLine = block.split('\n').find((line) => line.startsWith('data: '))?.slice(6);
+  if (!event || !dataLine) return null;
+
+  try {
+    return { event, data: JSON.parse(dataLine) as unknown };
+  } catch {
+    return null;
+  }
+}
+
+async function readLLMStream(
+  response: Response,
+  onProcess: (label: string) => void,
+): Promise<LLMResponsePayload> {
+  if (!response.body) return response.json() as Promise<LLMResponsePayload>;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalPayload: LLMResponsePayload | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf('\n\n');
+
+    while (boundary >= 0) {
+      const rawBlock = buffer.slice(0, boundary).trim();
+      buffer = buffer.slice(boundary + 2);
+
+      const parsed = parseSSEBlock(rawBlock);
+      if (parsed?.event === 'step') {
+        const step = parsed.data as { label?: unknown };
+        if (typeof step.label === 'string') onProcess(step.label);
+      }
+      if (parsed?.event === 'result') {
+        finalPayload = parsed.data as LLMResponsePayload;
+      }
+      if (parsed?.event === 'error') {
+        finalPayload = parsed.data as LLMResponsePayload;
+      }
+
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+
+  return finalPayload || { error: 'Respons stream kosong' };
+}
 
 function genSessionId(): string {
   if (typeof window === 'undefined') return '';
@@ -31,32 +87,20 @@ function genSessionId(): string {
 }
 
 export default function LLMPage() {
-  const [messages, setMessages] = useState<{ role: string; content: string; sources?: any[]; debug?: any }[]>([
-    { role: "assistant", content: "Halo! Pilih provider LLM, masukkan API Key, lalu tanyakan topik berita yang Anda cari." },
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "assistant", content: "Halo! Saya siap membantu pertanyaan seputar berita daerah Kabupaten Malang." },
   ]);
   const [input, setInput] = useState("");
-  const [provider, setProvider] = useState("groq");
-  const [apiKey, setApiKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
   // ponytail: debug toggle disabled — debug data no longer sent from API
   const [isLoading, setIsLoading] = useState(false);
+  const [activeProcess, setActiveProcess] = useState("Mengirim pertanyaan...");
   const [chatFullscreen, setChatFullscreen] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(genSessionId());
 
-  useEffect(() => setMounted(true), []);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_PREFIX + provider);
-    if (saved) setApiKey(saved);
-    else setApiKey("");
-  }, [provider]);
-
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, activeProcess]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -66,21 +110,13 @@ export default function LLMPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const saveKey = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem(STORAGE_PREFIX + provider, key);
-  };
-
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
-    if (!apiKey.trim()) {
-      setMessages(prev => [...prev, { role: "assistant", content: `Silakan masukkan API Key untuk ${PROVIDERS.find(p => p.id === provider)?.label}.` }]);
-      return;
-    }
 
     const userMsg = input.trim();
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    setActiveProcess("Mengirim pertanyaan...");
     setIsLoading(true);
 
     try {
@@ -89,14 +125,14 @@ export default function LLMPage() {
       const res = await fetch("/api/llm", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-session-id": sessionId.current },
-        body: JSON.stringify({ query: userMsg, apiKey, provider, messages: history }),
+        body: JSON.stringify({ query: userMsg, messages: history, stream: true }),
       });
-      const data = await res.json();
+      const data = await readLLMStream(res, setActiveProcess);
 
       if (data.error) {
         setMessages(prev => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
       } else {
-        setMessages(prev => [...prev, { role: "assistant", content: data.response, sources: data.sources || [], debug: data.debug }]);
+        setMessages(prev => [...prev, { role: "assistant", content: data.response || "Maaf, respons kosong.", sources: data.sources || [], debug: data.debug }]);
       }
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Gagal terhubung ke server." }]);
@@ -104,7 +140,6 @@ export default function LLMPage() {
     setIsLoading(false);
   };
 
-  const currentProvider = PROVIDERS.find(p => p.id === provider);
   const chatPanelStyle = chatFullscreen
     ? {
         backgroundColor: "var(--bg-card)",
@@ -143,11 +178,9 @@ export default function LLMPage() {
 
         {isLoading && (
           <div className="flex justify-start animate-fade-in">
-            <div className="rounded-xl px-4 py-3 flex gap-1.5" style={{ backgroundColor: "var(--bg-primary)" }}>
-              {[0, 0.2, 0.4].map((d, i) => (
-                <div key={i} className="w-2 h-2 rounded-full animate-pulse-dot"
-                  style={{ backgroundColor: "var(--accent)", animationDelay: `${d}s` }} />
-              ))}
+            <div className="rounded-xl px-4 py-3 flex items-center gap-2 text-sm" style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
+              <Loader2 size={15} className="animate-spin" style={{ color: "var(--accent)" }} />
+              <span>{activeProcess}</span>
             </div>
           </div>
         )}
@@ -175,51 +208,9 @@ export default function LLMPage() {
     <div className="relative flex flex-col h-[calc(100vh-9rem)] w-full min-w-0">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>RAG Chat</h2>
-          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Multi-provider LLM + database berita daerah</p>
+          <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>AI Assistant Chatbot</h2>
         </div>
         {/* ponytail: debug button removed — no longer needed */}
-      </div>
-
-      {/* Provider + API Key */}
-      <div className="mb-4 p-3 rounded-xl space-y-3" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <div className="flex items-center gap-3">
-          <Bot size={16} style={{ color: "var(--text-muted)" }} />
-          <select value={provider} onChange={e => setProvider(e.target.value)}
-            className="flex-1 text-sm font-medium bg-transparent border-none outline-none cursor-pointer"
-            style={{ color: "var(--text-primary)" }}>
-            {PROVIDERS.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.label} 🔑
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2 px-1">
-          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-            {currentProvider?.desc}
-          </span>
-          <a href={KEY_LINKS[provider]} target="_blank" rel="noopener noreferrer"
-            className="text-[10px] opacity-50 hover:opacity-100 transition-opacity flex items-center gap-0.5"
-            style={{ color: "var(--accent)" }}>
-            Dapatkan API Key <ExternalLink size={10} />
-          </a>
-        </div>
-        <div className="flex items-center gap-3">
-          <Key size={16} style={{ color: "var(--text-muted)" }} />
-          <input
-            type={showKey ? "text" : "password"}
-            value={apiKey}
-            onChange={e => saveKey(e.target.value)}
-            placeholder={currentProvider?.keyPrefix + "xxxxxxxxxxxx"}
-            className="flex-1 text-xs font-mono bg-transparent border-none outline-none"
-            style={{ color: "var(--text-primary)" }}
-          />
-          <button onClick={() => setShowKey(!showKey)} className="text-xs px-2 py-1 rounded flex-shrink-0"
-            style={{ color: "var(--text-muted)", backgroundColor: "var(--bg-primary)" }}>
-            {showKey ? "Sembunyi" : "Lihat"}
-          </button>
-        </div>
       </div>
 
       <div className="text-[10px] px-3 py-1.5 rounded-lg mb-3 flex items-center gap-1.5"
@@ -227,7 +218,7 @@ export default function LLMPage() {
         <span className="flex-shrink-0">⚠️</span>
         Jawaban AI dapat mengandung kesalahan. Harap cross-check dengan sumber berita asli melalui link yang tersedia.
       </div>
-      {chatFullscreen && mounted ? createPortal(chatPanel, document.body) : chatPanel}
+      {chatFullscreen && typeof document !== "undefined" ? createPortal(chatPanel, document.body) : chatPanel}
     </div>
   );
 }

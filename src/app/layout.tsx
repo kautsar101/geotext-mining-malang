@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { label: "Peta Spasial", icon: Map, href: "/map" },
   { label: "Analisis Sentimen", icon: BarChart3, href: "/sentiment" },
   { label: "List Berita", icon: Newspaper, href: "/news" },
-  { label: "LLM Chat", icon: MessageSquare, href: "/llm" },
+  { label: "Tanya AI", icon: MessageSquare, href: "/llm" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -31,10 +31,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     const saved = localStorage.getItem("theme");
     if (saved === "dark") {
-      setDark(true);
-      document.documentElement.classList.add("dark");
+      window.requestAnimationFrame(() => setDark(true));
     }
   }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+  }, [dark]);
 
   const toggleTheme = () => {
     const next = !dark;

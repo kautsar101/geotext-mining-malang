@@ -1,7 +1,6 @@
 import { supabase } from '@/backend/db/supabase';
 import { callLLM } from './providers';
 import { sanitizeInput } from './guardrails';
-import type { ProviderId } from './types';
 
 type QueryBuilder = {
   eq: (column: string, value: unknown) => QueryBuilder;
@@ -35,7 +34,7 @@ Kolom:
 - published_date (text): tanggal publikasi format YYYY-MM-DD
 - content_clean (text): isi berita`;
 
-export async function generateSQL(provider: ProviderId, apiKey: string, query: string): Promise<string> {
+export async function generateSQL(query: string): Promise<string> {
   const safeQuery = sanitizeInput(query);
   const prompt = `Anda adalah generator SQL yang aman. Tugas Anda hanya membuat SELECT query.
 
@@ -61,7 +60,7 @@ SQL: SELECT category, COUNT(*) as total FROM clean_news_articles GROUP BY catego
 User: "${safeQuery}"
 SQL:`;
 
-  const result = await callLLM(provider, apiKey, [{ role: 'user', content: prompt }], 160, 0);
+  const result = await callLLM([{ role: 'user', content: prompt }], 160, 0);
   const cleaned = result.replace(/```sql|```/gi, '').trim().replace(/;$/, '');
   if (!/FROM\s+clean_news_articles/i.test(cleaned)) return 'SELECT COUNT(*) FROM clean_news_articles';
   return cleaned;

@@ -1,7 +1,7 @@
 import { supabase } from '@/backend/db/supabase';
 import { callLLM, generateEmbedding } from './providers';
 import { safeJsonParse, sanitizeInput } from './guardrails';
-import type { ProviderId, Source } from './types';
+import type { Source } from './types';
 
 const KECAMATAN = [
   'Ampelgading', 'Bantur', 'Bululawang', 'Dampit', 'Dau', 'Donomulyo', 'Gedangan',
@@ -56,8 +56,6 @@ function expandSearchTerms(terms: string[]): string[] {
 }
 
 export async function parseRetrievalQuery(
-  provider: ProviderId,
-  apiKey: string,
   query: string,
 ): Promise<ParsedQuery> {
   const safeQuery = sanitizeInput(query);
@@ -81,7 +79,7 @@ Query:
 """${safeQuery}"""`;
 
   try {
-    const result = await callLLM(provider, apiKey, [{ role: 'user', content: prompt }], 120, 0);
+    const result = await callLLM([{ role: 'user', content: prompt }], 120, 0);
     const parsed = safeJsonParse<ParsedQuery>(result, fallback);
     const kategori = typeof parsed.kategori === 'string' && VALID_KATEGORI.includes(parsed.kategori.toLowerCase())
       ? parsed.kategori.toLowerCase()
@@ -104,8 +102,6 @@ Query:
 }
 
 export async function retrieveSources(
-  provider: ProviderId,
-  apiKey: string,
   queryText: string,
   filters: Pick<ParsedQuery, 'kecamatan' | 'kategori' | 'sentimen'>,
 ): Promise<{ sources: Source[]; searchInfo: string }> {
@@ -123,7 +119,7 @@ export async function retrieveSources(
   }
 
   try {
-    const embedding = await generateEmbedding(provider, apiKey, queryText);
+    const embedding = await generateEmbedding();
     if (embedding && embedding.length > 0) {
       const { data } = await supabase.rpc('match_news_embeddings', {
         query_embedding: embedding,

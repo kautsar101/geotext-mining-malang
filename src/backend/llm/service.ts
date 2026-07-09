@@ -8,16 +8,14 @@ import {
 } from './guardrails';
 import { compactSessionMemory, getSessionMemory, recordExchange } from './memory';
 import { buildFinalMessages } from './prompts';
-import { callLLM, isProviderId, PROVIDERS } from './providers';
+import { callLLM } from './providers';
 import { classifyIntents } from './router';
 import { executeSQL, generateSQL, validateSQL } from './sql';
 import { parseRetrievalQuery, retrieveSources } from './retriever';
-import type { LLMIntent, Source } from './types';
+import type { LLMIntent, LLMProcessStep, LLMProcessStepId, Source } from './types';
 
 type LLMRequestBody = {
   query?: unknown;
-  provider?: unknown;
-  apiKey?: unknown;
   sessionId?: unknown;
   messages?: unknown;
   debug?: unknown;
@@ -28,6 +26,24 @@ type LLMServiceResult = {
   status?: number;
 };
 
+type LLMServiceOptions = {
+  onStep?: (step: LLMProcessStep) => void;
+};
+
+function toFriendlyLLMError(error: string): string {
+  const lowered = error.toLowerCase();
+  if (lowered.includes('413') || lowered.includes('request too large') || lowered.includes('tokens per minute') || lowered.includes('tpm')) {
+    return 'Maaf, permintaan terlalu besar untuk diproses saat ini. Coba ringkas pertanyaan atau mulai chat baru.';
+  }
+  if (lowered.includes('429') || lowered.includes('rate limit') || lowered.includes('quota')) {
+    return 'Maaf, layanan AI sedang sibuk atau mencapai batas sementara. Coba lagi beberapa saat lagi.';
+  }
+  if (lowered.includes('tidak ada groq api key') || lowered.includes('semua groq api key')) {
+    return 'Maaf, layanan AI sedang tidak tersedia. Coba lagi nanti.';
+  }
+  return 'Maaf, terjadi kendala saat memproses jawaban. Coba lagi beberapa saat lagi.';
+}
+
 export function genSessionId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -35,16 +51,22 @@ export function genSessionId(): string {
 export async function handleLLMRequest(
   body: LLMRequestBody,
   fallbackSessionId = genSessionId(),
+  options: LLMServiceOptions = {},
 ): Promise<LLMServiceResult> {
   const t0 = Date.now();
   let queryForLog = '';
   let routeForLog = '';
   const sessionId = fallbackSessionId;
+  const processSteps: LLMProcessStep[] = [];
+
+  const emitStep = (id: LLMProcessStepId, label: string) => {
+    const step = { id, label, elapsedMs: Date.now() - t0 };
+    processSteps.push(step);
+    options.onStep?.(step);
+  };
 
   try {
     const query = typeof body.query === 'string' ? sanitizeInput(body.query) : '';
-    const providerRaw = typeof body.provider === 'string' ? body.provider : 'groq';
-    const apiKey = typeof body.apiKey === 'string' ? body.apiKey : '';
     const sid = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : sessionId;
     const includeDebug = body.debug === true;
     const clientMessages = normalizeMessages(body.messages);
@@ -54,6 +76,8 @@ export async function handleLLMRequest(
     if (!query) {
       return { body: { error: 'Query diperlukan' }, status: 400 };
     }
+
+    emitStep('understand', 'Memahami pertanyaan...');
 
     if (!isInProjectContext(query, clientMessages)) {
       routeForLog = 'out_of_context';
@@ -69,19 +93,10 @@ export async function handleLLMRequest(
         body: {
           response: OUT_OF_CONTEXT_RESPONSE,
           sources: [],
+          processSteps,
           ...(includeDebug ? { debug: { intents: [], route: routeForLog, latencyMs: Date.now() - t0 } } : {}),
         },
       };
-    }
-
-    if (!isProviderId(providerRaw)) {
-      return { body: { error: `Provider tidak dikenal: ${providerRaw}` }, status: 400 };
-    }
-
-    const provider = providerRaw;
-    const cfg = PROVIDERS[provider];
-    if (cfg.needsKey && !apiKey) {
-      return { body: { error: `API Key diperlukan untuk ${provider}` }, status: 400 };
     }
 
     const memory = await getSessionMemory(sid);
@@ -89,7 +104,7 @@ export async function handleLLMRequest(
 
     let intents: LLMIntent[] = ['chat'];
     if (!isGreetingOnly(query)) {
-      const routed = await classifyIntents(provider, apiKey, query, recentMessages);
+      const routed = await classifyIntents(query, recentMessages);
       intents = routed.intents;
     }
 
@@ -110,6 +125,7 @@ export async function handleLLMRequest(
         body: {
           response,
           sources: [],
+          processSteps,
           ...(includeDebug ? { debug: { intents, route: routeForLog, latencyMs: Date.now() - t0 } } : {}),
         },
       };
@@ -120,15 +136,16 @@ export async function handleLLMRequest(
     let sqlResult: unknown = null;
 
     if (intents.includes('sql')) {
-      sqlGenerated = await generateSQL(provider, apiKey, query);
+      emitStep('analyze_data', 'Menganalisis data...');
+      sqlGenerated = await generateSQL(query);
       if (validateSQL(sqlGenerated)) {
         const result = await executeSQL(sqlGenerated);
         sqlResult = result.data;
         sqlContext = result.data.length > 0
-          ? `SQL: ${sqlGenerated}\nMeta: ${result.meta}\nHasil: ${JSON.stringify(result.data, null, 2)}`
-          : `SQL: ${sqlGenerated}\nMeta: ${result.meta}\nHasil: []\nPeringatan: hasil SQL kosong. Jangan membuat angka statistik sendiri.`;
+          ? `Data database (${result.meta}): ${JSON.stringify(result.data, null, 2)}`
+          : `Data database (${result.meta}): []\nPeringatan: hasil database kosong. Jangan membuat angka statistik sendiri.`;
       } else {
-        sqlContext = `SQL tidak valid dan tidak dieksekusi: ${sqlGenerated || '-'}\nPeringatan: jangan membuat angka statistik sendiri.`;
+        sqlContext = 'Data database tidak tersedia.\nPeringatan: jangan membuat angka statistik sendiri.';
       }
     }
 
@@ -136,8 +153,9 @@ export async function handleLLMRequest(
     let searchInfo = '';
 
     if (intents.includes('rag')) {
-      const parsed = await parseRetrievalQuery(provider, apiKey, query);
-      const retrieval = await retrieveSources(provider, apiKey, query, {
+      emitStep('search_documents', 'Mencari konteks berita...');
+      const parsed = await parseRetrievalQuery(query);
+      const retrieval = await retrieveSources(query, {
         kecamatan: parsed.kecamatan,
         kategori: parsed.kategori,
         sentimen: parsed.sentimen,
@@ -145,6 +163,8 @@ export async function handleLLMRequest(
       sources = retrieval.sources;
       searchInfo = retrieval.searchInfo;
     }
+
+    emitStep('compose_answer', 'Menyusun jawaban...');
 
     const finalMessages = buildFinalMessages({
       query,
@@ -156,7 +176,7 @@ export async function handleLLMRequest(
       searchInfo,
     });
 
-    const answer = cleanModelText(await callLLM(provider, apiKey, finalMessages, 900, 0.3));
+    const answer = cleanModelText(await callLLM(finalMessages, 900, 0.3), query);
 
     await recordExchange({
       sessionId: sid,
@@ -169,12 +189,13 @@ export async function handleLLMRequest(
       latencyMs: Date.now() - t0,
     });
 
-    compactSessionMemory(provider, apiKey, sid, memory.summary, memory.logCount + 1);
+    compactSessionMemory(sid, memory.summary, memory.logCount + 1);
 
     return {
       body: {
         response: answer,
         sources,
+        processSteps,
         ...(includeDebug
           ? {
               debug: {
@@ -192,6 +213,7 @@ export async function handleLLMRequest(
     };
   } catch (e: unknown) {
     const error = e instanceof Error ? e.message : 'Internal error';
+    const friendlyError = toFriendlyLLMError(error);
     await recordExchange({
       sessionId,
       query: queryForLog,
@@ -199,6 +221,6 @@ export async function handleLLMRequest(
       error,
       latencyMs: Date.now() - t0,
     });
-    return { body: { error }, status: 500 };
+    return { body: { error: friendlyError }, status: 500 };
   }
 }
