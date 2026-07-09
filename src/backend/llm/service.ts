@@ -2,11 +2,10 @@ import {
   cleanModelText,
   isGreetingOnly,
   isInProjectContext,
-  normalizeMessages,
   OUT_OF_CONTEXT_RESPONSE,
   sanitizeInput,
 } from './guardrails';
-import { compactSessionMemory, getSessionMemory, recordExchange } from './memory';
+import { recordExchange } from './memory';
 import { buildFinalMessages } from './prompts';
 import { callLLM } from './providers';
 import { classifyIntents } from './router';
@@ -69,7 +68,6 @@ export async function handleLLMRequest(
     const query = typeof body.query === 'string' ? sanitizeInput(body.query) : '';
     const sid = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : sessionId;
     const includeDebug = body.debug === true;
-    const clientMessages = normalizeMessages(body.messages);
 
     queryForLog = query;
 
@@ -79,7 +77,7 @@ export async function handleLLMRequest(
 
     emitStep('understand', 'Memahami pertanyaan...');
 
-    if (!isInProjectContext(query, clientMessages)) {
+    if (!isInProjectContext(query)) {
       routeForLog = 'out_of_context';
       await recordExchange({
         sessionId: sid,
@@ -99,12 +97,9 @@ export async function handleLLMRequest(
       };
     }
 
-    const memory = await getSessionMemory(sid);
-    const recentMessages = memory.recentMessages.length > 0 ? memory.recentMessages : clientMessages;
-
     let intents: LLMIntent[] = ['chat'];
     if (!isGreetingOnly(query)) {
-      const routed = await classifyIntents(query, recentMessages);
+      const routed = await classifyIntents(query, []);
       intents = routed.intents;
     }
 
@@ -169,14 +164,13 @@ export async function handleLLMRequest(
     const finalMessages = buildFinalMessages({
       query,
       intents,
-      memorySummary: memory.summary,
-      recentMessages,
+      recentMessages: [],
       sqlContext,
       ragSources: sources,
       searchInfo,
     });
 
-    const answer = cleanModelText(await callLLM(finalMessages, 900, 0.3), query);
+    const answer = cleanModelText(await callLLM(finalMessages, 650, 0.3), query);
 
     await recordExchange({
       sessionId: sid,
@@ -188,8 +182,6 @@ export async function handleLLMRequest(
       sources,
       latencyMs: Date.now() - t0,
     });
-
-    compactSessionMemory(sid, memory.summary, memory.logCount + 1);
 
     return {
       body: {

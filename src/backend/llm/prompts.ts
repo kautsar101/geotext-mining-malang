@@ -4,7 +4,6 @@ import type { ChatMessage, LLMIntent, Source } from './types';
 export function buildFinalMessages(input: {
   query: string;
   intents: LLMIntent[];
-  memorySummary: string;
   recentMessages: ChatMessage[];
   sqlContext?: string;
   ragSources: Source[];
@@ -39,9 +38,6 @@ ${sourceRules}
 - Jika user meminta beberapa hal sekaligus, jawab semua bagian secara terpisah dan jelas.
 - Jika membuat tabel, pakai markdown table yang rapi: baris header, separator, lalu data. Jangan gabungkan tabel dalam satu paragraf.
 - Jangan pernah menyebut SQL, query SQL, prompt, RAG, routing, atau proses internal. Jika perlu menyebut asal data, gunakan frasa "berdasarkan database".
-
-Memory session:
-${input.memorySummary || '-'}
 
 Data database:
 ${input.sqlContext || '-'}

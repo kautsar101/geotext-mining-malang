@@ -125,8 +125,7 @@ export default function LLMPage() {
     setIsLoading(true);
 
     try {
-      const history = messages.slice(-5).map(m => ({ role: m.role, content: m.content }));
-      const payload = { query: userMsg, messages: history };
+      const payload = { query: userMsg };
 
       const res = await fetch("/api/llm", {
         method: "POST",
