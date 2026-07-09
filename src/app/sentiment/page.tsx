@@ -20,6 +20,110 @@ function daysAgo(n: number) {
   const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10);
 }
 
+// ── Komponen Proporsi Sentimen per Kecamatan (Pie Chart) ──────────────────────
+
+type KecProp = {
+  name: string;
+  positive: number; neutral: number; negative: number;
+  pCount: number; nCount: number; negCount: number;
+};
+
+
+function KecPieSection({ kecProps, cc }: { kecProps: KecProp[]; cc: typeof C }) {
+  const allNames = kecProps.map(k => k.name);
+  const [selected, setSelected] = useState<string>(allNames[0] ?? "");
+
+  const data = kecProps.find(k => k.name === selected);
+
+  return (
+    <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Proporsi Sentimen per Kecamatan</h3>
+        <select
+          value={selected}
+          onChange={e => setSelected(e.target.value)}
+          className="px-3 py-1.5 rounded-lg text-xs outline-none"
+          style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", color: "var(--text-primary)", minWidth: 180 }}
+        >
+          {allNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+
+      {data ? (
+        <div className="flex flex-col items-center gap-4">
+          {/* Pie chart — lebih besar karena hanya satu */}
+          <KecSinglePieLarge data={data} cc={cc} />
+
+          {/* Ringkasan jumlah berita */}
+          <div className="grid grid-cols-3 gap-3 w-full max-w-xs text-center">
+            {([["Positif", data.pCount, cc.c2], ["Netral", data.nCount, cc.c6], ["Negatif", data.negCount, cc.c5]] as const).map(([label, count, color]) => (
+              <div key={label} className="rounded-xl p-3" style={{ backgroundColor: "var(--bg-secondary)" }}>
+                <div className="text-xl font-bold" style={{ color }}>{count}</div>
+                <div className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{label}</div>
+                <div className="text-[10px] font-medium" style={{ color }}>
+                  {data.positive + data.neutral + data.negative > 0
+                    ? label === "Positif" ? `${data.positive}%`
+                    : label === "Netral" ? `${data.neutral}%`
+                    : `${data.negative}%`
+                    : "0%"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-center text-xs py-8" style={{ color: "var(--text-muted)" }}>Tidak ada data kecamatan.</p>
+      )}
+    </div>
+  );
+}
+
+function KecSinglePieLarge({ data, cc }: { data: KecProp; cc: typeof C }) {
+  const pieData = [
+    { name: "Positif",  value: data.positive,  count: data.pCount,   fill: cc.c2 },
+    { name: "Netral",   value: data.neutral,   count: data.nCount,   fill: cc.c6 },
+    { name: "Negatif",  value: data.negative,  count: data.negCount, fill: cc.c5 },
+  ].filter(d => d.value > 0);
+
+  const RADIAN = Math.PI / 180;
+  const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }: any) => {
+    if (value < 5) return null;
+    const r = innerRadius + (outerRadius - innerRadius) * 0.55;
+    const x = cx + r * Math.cos(-midAngle * RADIAN);
+    const y = cy + r * Math.sin(-midAngle * RADIAN);
+    return (
+      <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700}>
+        {value}%
+      </text>
+    );
+  };
+
+  return (
+    <div className="flex flex-col items-center">
+      <PieChart width={260} height={260}>
+        <Pie data={pieData} cx={125} cy={125} outerRadius={115} dataKey="value" labelLine={false} label={renderLabel}>
+          {pieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+        </Pie>
+        <Tooltip
+          formatter={(value: any, name: any, props: any) => [`${value}% (${props.payload.count} berita)`, name]}
+          contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 11 }}
+        />
+      </PieChart>
+      <div className="flex gap-4 mt-1">
+        {pieData.map(d => (
+          <span key={d.name} className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+            <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: d.fill }} />
+            {d.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 export default function SentimentPage() {
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -218,30 +322,8 @@ export default function SentimentPage() {
         </div>
       </div>
 
-      {/* Proporsi Sentimen per Kecamatan */}
-      <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Proporsi Sentimen per Kecamatan</h3>
-        <ResponsiveContainer width="100%" height={Math.max(300, kecProps.length * 28)}>
-          <BarChart data={kecProps} layout="vertical" margin={{ left: 20, right: 50 }} barSize={18}>
-            <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
-            <XAxis type="number" tick={{ fontSize: 10, fill: cc.tm }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: cc.ts }} width={90} />
-            <Tooltip
-              formatter={(v: any, name: any, props: any) => {
-                const p = props.payload;
-                if (name === "positive") return [`${v}% (${p?.pCount || 0} berita)`, "Positive"];
-                if (name === "negative") return [`${v}% (${p?.negCount || 0} berita)`, "Negative"];
-                return [`${v}% (${p?.nCount || 0} berita)`, "Neutral"];
-              }}
-              contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }}
-            />
-            <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 11 }}>{v}</span>} />
-            <Bar dataKey="positive" stackId="a" fill={cc.c2} radius={[0, 0, 0, 0]} />
-            <Bar dataKey="neutral" stackId="a" fill={cc.c6} />
-            <Bar dataKey="negative" stackId="a" fill={cc.c5} radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Proporsi Sentimen per Kecamatan — Pie Chart */}
+      <KecPieSection kecProps={kecProps} cc={cc} />
 
       {/* Sentimen by Category + Proporsi */}
       <div className="grid grid-cols-2 gap-4">
