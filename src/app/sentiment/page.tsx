@@ -30,7 +30,7 @@ type KecProp = {
 
 
 function KecPieSection({ kecProps, cc }: { kecProps: KecProp[]; cc: typeof C }) {
-  const allNames = kecProps.map(k => k.name);
+  const allNames = kecProps.map(k => k.name).sort((a, b) => a.localeCompare(b));
   const [selected, setSelected] = useState<string>(allNames[0] ?? "");
 
   const data = kecProps.find(k => k.name === selected);

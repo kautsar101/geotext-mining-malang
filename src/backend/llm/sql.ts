@@ -1,6 +1,6 @@
 import { supabase } from '@/backend/db/supabase';
 import { callLLM } from './providers';
-import { sanitizeInput } from './guardrails';
+import { normalizeQueryText, sanitizeInput } from './guardrails';
 
 type QueryBuilder = {
   eq: (column: string, value: unknown) => QueryBuilder;
@@ -21,6 +21,7 @@ const VALID_KECAMATAN = [
 ];
 
 const ALLOWED_COLUMNS = ['category', 'sentiment', 'primary_kecamatan', 'source'];
+const VALID_CATEGORIES = ['ekonomi', 'sosial', 'kesehatan', 'pendidikan'];
 
 export const SCHEMA_DESC = `Tabel: clean_news_articles
 Kolom:
@@ -34,8 +35,85 @@ Kolom:
 - published_date (text): tanggal publikasi format YYYY-MM-DD
 - content_clean (text): isi berita`;
 
+function buildWhereFromQuery(query: string): string {
+  const lowered = normalizeQueryText(query);
+  const filters: string[] = [];
+  const category = VALID_CATEGORIES.find((value) => lowered.includes(value));
+  const kecamatan = VALID_KECAMATAN.find((value) => lowered.includes(value));
+  const sentiment = lowered.includes('positif')
+    ? 'positive'
+    : lowered.includes('negatif')
+      ? 'negative'
+      : lowered.includes('netral')
+        ? 'neutral'
+        : null;
+
+  if (category) filters.push(`LOWER(category)='${category}'`);
+  if (sentiment) filters.push(`LOWER(sentiment)='${sentiment}'`);
+  if (kecamatan) filters.push(`LOWER(primary_kecamatan)='${kecamatan}'`);
+
+  return filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
+}
+
+function buildDeterministicSQL(query: string): string | null {
+  const lowered = normalizeQueryText(query);
+  const where = buildWhereFromQuery(query);
+  const asksCount = /\b(berapa|jumlah|total)\b/i.test(lowered);
+
+  if (asksCount) {
+    return `SELECT COUNT(*) FROM clean_news_articles${where}`;
+  }
+
+  if (/\b(per|berdasarkan)\s+kategori\b/i.test(lowered)) {
+    return `SELECT category, COUNT(*) as total FROM clean_news_articles${where} GROUP BY category ORDER BY total DESC`;
+  }
+
+  if (/\b(per|berdasarkan)\s+sentimen\b/i.test(lowered)) {
+    return `SELECT sentiment, COUNT(*) as total FROM clean_news_articles${where} GROUP BY sentiment ORDER BY total DESC`;
+  }
+
+  if (/\b(per|berdasarkan)\s+kecamatan\b/i.test(lowered)) {
+    return `SELECT primary_kecamatan, COUNT(*) as total FROM clean_news_articles${where} GROUP BY primary_kecamatan ORDER BY total DESC`;
+  }
+
+  return null;
+}
+
+function extractSelectStatement(raw: string): string {
+  const withoutFence = raw.replace(/```sql|```/gi, '').replace(/\r/g, '').trim();
+  const selectIndex = withoutFence.search(/\bSELECT\b/i);
+  if (selectIndex < 0) return '';
+
+  const tail = withoutFence.slice(selectIndex);
+  const beforeSemicolon = tail.split(';')[0];
+  const sqlLines: string[] = [];
+
+  for (const line of beforeSemicolon.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (sqlLines.length > 0) break;
+      continue;
+    }
+
+    if (
+      /^(SELECT|FROM|WHERE|AND|OR|GROUP\s+BY|ORDER\s+BY|LIMIT)\b/i.test(trimmed) ||
+      (sqlLines.length > 0 && /^(LOWER\(|COUNT\(|[a-z_]+,|[a-z_]+\s*=|'[^']+'|\))/i.test(trimmed))
+    ) {
+      sqlLines.push(trimmed);
+      continue;
+    }
+
+    if (sqlLines.length > 0) break;
+  }
+
+  return sqlLines.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 export async function generateSQL(query: string): Promise<string> {
   const safeQuery = sanitizeInput(query);
+  const deterministicSQL = buildDeterministicSQL(safeQuery);
+  if (deterministicSQL) return deterministicSQL;
+
   const prompt = `Anda adalah generator SQL yang aman. Tugas Anda hanya membuat SELECT query.
 
 ${SCHEMA_DESC}
@@ -49,6 +127,7 @@ Aturan wajib:
 6. Untuk perbandingan nilai seperti positive/negative, gunakan GROUP BY, bukan hanya COUNT gabungan.
 7. Jangan gunakan STRING_AGG atau fungsi selain COUNT.
 8. Balas HANYA SQL satu baris.
+9. Dilarang memberi penjelasan, markdown, teks pembuka, atau teks penutup.
 
 Contoh:
 User: "ada berapa berita positif di Kepanjen?"
@@ -61,7 +140,7 @@ User: "${safeQuery}"
 SQL:`;
 
   const result = await callLLM([{ role: 'user', content: prompt }], 160, 0);
-  const cleaned = result.replace(/```sql|```/gi, '').trim().replace(/;$/, '');
+  const cleaned = extractSelectStatement(result).replace(/;$/, '');
   if (!/FROM\s+clean_news_articles/i.test(cleaned)) return 'SELECT COUNT(*) FROM clean_news_articles';
   return cleaned;
 }

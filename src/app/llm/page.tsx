@@ -26,6 +26,9 @@ type LLMResponsePayload = {
   error?: string;
 };
 
+const AI_WARNING_TEXT = "Jawaban AI dapat mengandung kesalahan. Harap cross-check dengan sumber berita asli melalui link yang tersedia.";
+const MEMORY_NOTICE_TEXT = "Untuk menjaga respons tetap cepat dan efisien, chatbot tidak menyimpan konteks percakapan sebelumnya. Mohon tulis pertanyaan secara lengkap dan jelas dalam satu pesan.";
+
 function parseSSEBlock(block: string): { event: string; data: unknown } | null {
   const event = block.split('\n').find((line) => line.startsWith('event: '))?.slice(7).trim();
   const dataLine = block.split('\n').find((line) => line.startsWith('data: '))?.slice(6);
@@ -171,6 +174,20 @@ export default function LLMPage() {
   const chatPanel = (
     <div className={`${chatFullscreen ? "fixed z-[100] rounded-none" : "relative flex-1 rounded-xl"} overflow-hidden flex flex-col shadow-sm border`}
       style={chatPanelStyle}>
+      {chatFullscreen && (
+        <div
+          className="pointer-events-none absolute left-0 right-0 top-0 z-20 px-4 pb-8 pt-4"
+          style={{ background: "linear-gradient(to bottom, var(--bg-card) 0%, color-mix(in srgb, var(--bg-card) 88%, transparent) 55%, transparent 100%)" }}
+        >
+          <div
+            className="inline-flex max-w-[calc(100%-4rem)] items-center gap-1.5 rounded-lg px-3 py-1.5 text-[10px] shadow-sm"
+            style={{ backgroundColor: "color-mix(in srgb, var(--bg-primary) 88%, transparent)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
+          >
+            <span className="flex-shrink-0">⚠️</span>
+            <span>{AI_WARNING_TEXT}</span>
+          </div>
+        </div>
+      )}
       <button
         onClick={() => setChatFullscreen(v => !v)}
         title={chatFullscreen ? "Keluar fullscreen chat" : "Fullscreen chat"}
@@ -180,7 +197,7 @@ export default function LLMPage() {
         {chatFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
       </button>
 
-      <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${chatFullscreen ? "pt-16" : "pt-14"}`}>
+      <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${chatFullscreen ? "pt-24" : "pt-14"}`}>
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
             <div className={`space-y-2 ${m.role === "user" ? "max-w-[86%]" : "max-w-[94%] lg:max-w-[90%]"}`}>
@@ -217,6 +234,9 @@ export default function LLMPage() {
             <Send size={18} />
           </button>
         </div>
+        <p className="mt-2 text-[10px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          {MEMORY_NOTICE_TEXT}
+        </p>
       </div>
     </div>
   );
@@ -233,7 +253,7 @@ export default function LLMPage() {
       <div className="text-[10px] px-3 py-1.5 rounded-lg mb-3 flex items-center gap-1.5"
         style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-muted)" }}>
         <span className="flex-shrink-0">⚠️</span>
-        Jawaban AI dapat mengandung kesalahan. Harap cross-check dengan sumber berita asli melalui link yang tersedia.
+        {AI_WARNING_TEXT}
       </div>
       {chatFullscreen && typeof document !== "undefined" ? createPortal(chatPanel, document.body) : chatPanel}
     </div>

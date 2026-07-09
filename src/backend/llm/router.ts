@@ -8,12 +8,14 @@ type RouterResult = {
 function fallbackIntents(query: string): LLMIntent[] {
   const q = query.toLowerCase();
   const intents = new Set<LLMIntent>();
+  const asksAggregate = /(berapa|jumlah|total|statistik|rata-rata|ranking|urutan|terbanyak|tersedikit|bandingkan|persentase)/i.test(q);
+  const asksDocuments = /(carikan|cari|daftar|list|artikel|sumber|link|judul|berita apa saja|sertakan)/i.test(q);
 
-  if (/(berapa|jumlah|total|statistik|rata-rata|ranking|urutan|terbanyak|tersedikit|bandingkan|persentase)/i.test(q)) {
+  if (asksAggregate) {
     intents.add('sql');
   }
 
-  if (/(berita|artikel|sumber|kejadian|kasus|isu|kecamatan|malang|banjir|sekolah|kesehatan|ekonomi|sosial|pendidikan)/i.test(q)) {
+  if ((!asksAggregate || asksDocuments) && /(berita|artikel|sumber|kejadian|kasus|isu|kecamatan|malang|banjir|sekolah|kesehatan|ekonomi|sosial|pendidikan)/i.test(q)) {
     intents.add('rag');
   }
 

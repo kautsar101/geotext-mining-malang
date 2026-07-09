@@ -2,6 +2,7 @@ import {
   cleanModelText,
   isGreetingOnly,
   isInProjectContext,
+  normalizeQueryText,
   OUT_OF_CONTEXT_RESPONSE,
   sanitizeInput,
 } from './guardrails';
@@ -28,6 +29,73 @@ type LLMServiceResult = {
 type LLMServiceOptions = {
   onStep?: (step: LLMProcessStep) => void;
 };
+
+const KECAMATAN_LABELS: Record<string, string> = {
+  ampelgading: 'Ampelgading',
+  bantur: 'Bantur',
+  bululawang: 'Bululawang',
+  dampit: 'Dampit',
+  dau: 'Dau',
+  donomulyo: 'Donomulyo',
+  gedangan: 'Gedangan',
+  gondanglegi: 'Gondanglegi',
+  jabung: 'Jabung',
+  kalipare: 'Kalipare',
+  karangploso: 'Karangploso',
+  kasembon: 'Kasembon',
+  kepanjen: 'Kepanjen',
+  kromengan: 'Kromengan',
+  lawang: 'Lawang',
+  ngajum: 'Ngajum',
+  ngantang: 'Ngantang',
+  pagak: 'Pagak',
+  pagelaran: 'Pagelaran',
+  pakis: 'Pakis',
+  pakisaji: 'Pakisaji',
+  poncokusumo: 'Poncokusumo',
+  pujon: 'Pujon',
+  singosari: 'Singosari',
+  'sumbermanjing wetan': 'Sumbermanjing Wetan',
+  sumberpucung: 'Sumberpucung',
+  tajinan: 'Tajinan',
+  tirtoyudo: 'Tirtoyudo',
+  tumpang: 'Tumpang',
+  turen: 'Turen',
+  wagir: 'Wagir',
+  wajak: 'Wajak',
+  wonosari: 'Wonosari',
+};
+
+function formatDirectCountAnswer(query: string, sqlResult: unknown): string | null {
+  if (!Array.isArray(sqlResult)) return null;
+  const firstRow = sqlResult[0] as Record<string, unknown> | undefined;
+  const count = Number(firstRow?.count);
+  if (!Number.isFinite(count)) return null;
+
+  const lowered = normalizeQueryText(query);
+  const category = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'].find((value) => lowered.includes(value));
+  const sentiment = lowered.includes('positif')
+    ? 'positif'
+    : lowered.includes('negatif')
+      ? 'negatif'
+      : lowered.includes('netral')
+        ? 'netral'
+        : null;
+  const kecamatan = Object.keys(KECAMATAN_LABELS).find((value) => lowered.includes(value));
+
+  const subject = [
+    'berita',
+    category ? category : '',
+    sentiment ? `dengan sentimen ${sentiment}` : '',
+  ].filter(Boolean).join(' ');
+  const location = kecamatan ? ` di Kecamatan ${KECAMATAN_LABELS[kecamatan]}` : '';
+
+  if (count === 0) {
+    return `Belum ada ${subject}${location}.`;
+  }
+
+  return `Ada ${count} ${subject}${location}.`;
+}
 
 function toFriendlyLLMError(error: string): string {
   const lowered = error.toLowerCase();
@@ -132,6 +200,7 @@ export async function handleLLMRequest(
     let sqlContext = '';
     let sqlGenerated = '';
     let sqlResult: unknown = null;
+    let sqlMeta = '';
 
     if (intents.includes('sql')) {
       emitStep('analyze_data', 'Menganalisis data...');
@@ -139,6 +208,7 @@ export async function handleLLMRequest(
       if (validateSQL(sqlGenerated)) {
         const result = await executeSQL(sqlGenerated);
         sqlResult = result.data;
+        sqlMeta = result.meta;
         sqlContext = result.data.length > 0
           ? `Data database (${result.meta}): ${JSON.stringify(result.data, null, 2)}`
           : `Data database (${result.meta}): []\nPeringatan: hasil database kosong. Jangan membuat angka statistik sendiri.`;
@@ -163,6 +233,43 @@ export async function handleLLMRequest(
     }
 
     emitStep('compose_answer', 'Menyusun jawaban...');
+
+    const directAnswer = sqlMeta === 'count' && !intents.includes('rag')
+      ? formatDirectCountAnswer(query, sqlResult)
+      : null;
+    if (directAnswer) {
+      await recordExchange({
+        sessionId: sid,
+        query,
+        route: routeForLog,
+        response: directAnswer,
+        sqlGenerated,
+        sqlResult,
+        sources,
+        latencyMs: Date.now() - t0,
+      });
+
+      return {
+        body: {
+          response: directAnswer,
+          sources,
+          processSteps,
+          ...(includeDebug
+            ? {
+                debug: {
+                  intents,
+                  route: routeForLog,
+                  sql: sqlGenerated || null,
+                  sqlResult,
+                  searchInfo: searchInfo || null,
+                  sourcesCount: sources.length,
+                  latencyMs: Date.now() - t0,
+                },
+              }
+            : {}),
+        },
+      };
+    }
 
     const finalMessages = buildFinalMessages({
       query,

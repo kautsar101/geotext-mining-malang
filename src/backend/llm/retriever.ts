@@ -1,6 +1,6 @@
 import { supabase } from '@/backend/db/supabase';
 import { generateEmbedding } from './providers';
-import { sanitizeInput } from './guardrails';
+import { normalizeQueryText, sanitizeInput } from './guardrails';
 import type { Source } from './types';
 
 const KECAMATAN = [
@@ -14,10 +14,11 @@ const KECAMATAN = [
 
 const VALID_KATEGORI = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'];
 const VALID_SENTIMEN = ['positive', 'negative', 'neutral'];
+const RAG_TOP_K = 10;
 const KEYWORD_STOPWORDS = [
   'carikan', 'cari', 'berita', 'artikel', 'tentang', 'kabupaten', 'malang',
   'kecamatan', 'saya', 'tolong', 'yang', 'dan', 'atau', 'dengan', 'untuk',
-  'sertakan', 'sumber', 'di', 'ke', 'dari',
+  'sertakan', 'sumber', 'di', 'ke', 'dari', 'isu',
 ];
 
 type ParsedQuery = {
@@ -64,7 +65,7 @@ export async function parseRetrievalQuery(
   query: string,
 ): Promise<ParsedQuery> {
   const safeQuery = sanitizeInput(query);
-  const lowered = safeQuery.toLowerCase();
+  const lowered = normalizeQueryText(safeQuery);
   const kecamatan = KECAMATAN.find((name) => lowered.includes(name.toLowerCase())) || null;
   const kategori = VALID_KATEGORI.find((value) => lowered.includes(value)) || null;
   const sentimen = lowered.includes('positif')
@@ -111,7 +112,7 @@ export async function retrieveSources(
       const { data } = await supabase.rpc('match_news_embeddings', {
         query_embedding: embedding,
         match_threshold: 0.35,
-        match_count: 20,
+        match_count: RAG_TOP_K,
         filter_kecamatan: filters.kecamatan || null,
         filter_kategori: filters.kategori || null,
         filter_sentimen: filters.sentimen || null,
@@ -125,13 +126,13 @@ export async function retrieveSources(
     // Keyword fallback below keeps non-embedding providers usable.
   }
 
-  const keywords = queryText.toLowerCase().split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8);
+  const keywords = normalizeQueryText(queryText).split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8);
   const searchTerms = expandSearchTerms(keywords.length > 0 ? keywords : [cleanSearchTerm(queryText)]);
 
   if (searchTerms[0]) {
     let q = supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
-      .limit(20);
+      .limit(RAG_TOP_K);
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
@@ -148,7 +149,7 @@ export async function retrieveSources(
     let q = supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
       .order('published_date', { ascending: false })
-      .limit(20);
+      .limit(RAG_TOP_K);
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
@@ -164,14 +165,14 @@ export async function retrieveSources(
     const { data } = await supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
       .order('published_date', { ascending: false })
-      .limit(12);
+      .limit(RAG_TOP_K);
     if (data && data.length > 0) {
       allSources.push(...dedup(data as RawSource[]));
       searchSteps.push('terbaru');
     }
   }
 
-  const sources = allSources.slice(0, 20).map((r, i) => ({
+  const sources = allSources.slice(0, RAG_TOP_K).map((r, i) => ({
     id: i + 1,
     title: r.title,
     snippet: String(r.chunk_text || r.content_clean || '').slice(0, 420),
