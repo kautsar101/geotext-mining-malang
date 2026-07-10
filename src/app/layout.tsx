@@ -64,7 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     <h1 className="text-lg font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
                       Geotext<span style={{ color: "var(--accent)" }}> Mining</span>
                     </h1>
-                    <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>Malang</p>
+                    <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>Kabupaten Malang</p>
                   </div>
                 </div>
               )}

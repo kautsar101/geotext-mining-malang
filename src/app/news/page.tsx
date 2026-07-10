@@ -131,8 +131,8 @@ export default function NewsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 p-4 rounded-xl items-center" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <div className="relative flex-1 min-w-[180px]">
+      <div className="flex flex-col sm:flex-row flex-wrap gap-3 p-4 rounded-xl items-center" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div className="relative w-full sm:flex-1 sm:min-w-[180px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
           <input type="text" placeholder="Cari judul..." value={search}
             onChange={e => setSearch(e.target.value)}
@@ -193,7 +193,7 @@ export default function NewsPage() {
                     { key: "published_date" as SortKey, label: "Tanggal", w: colWidths.date },
                   ]).map(col => (
                     <th key={col.key} style={{ width: col.w, position: "relative" }}
-                      className="text-left p-3 font-medium text-xs cursor-pointer select-none"
+                      className={`text-left p-3 font-medium text-xs cursor-pointer select-none ${col.key === "primary_kecamatan" ? "hidden md:table-cell" : ""}`}
                       onClick={() => handleSort(col.key)}>
                       <div className="flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
                         <span>{col.label}</span>
@@ -226,7 +226,7 @@ export default function NewsPage() {
                         <span className={`px-2 py-0.5 rounded-full text-xs ${sentColors[a.sentiment] || ""}`}>{a.sentiment}</span>
                       ) : "-"}
                     </td>
-                    <td className="p-3" style={{ color: "var(--text-secondary)" }}>{a.primary_kecamatan || "-"}</td>
+                    <td className="p-3 hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{a.primary_kecamatan || "-"}</td>
                     <td className="p-3 text-xs" style={{ color: "var(--text-muted)" }}>{a.published_date}</td>
                     <td className="p-3">
                       <a href={a.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
@@ -242,8 +242,8 @@ export default function NewsPage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between p-3 border-t flex-wrap gap-3" style={{ borderColor: "var(--border)" }}>
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border-t flex-wrap gap-3" style={{ borderColor: "var(--border)" }}>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                 {/* Rows per page */}
                 <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
                   <span>Baris:</span>

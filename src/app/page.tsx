@@ -191,7 +191,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
 
       {/* Hero Carousel */}
       {hero && (
-        <div className="relative rounded-2xl overflow-hidden h-60 shadow-lg">
+        <div className="relative rounded-2xl overflow-hidden h-48 md:h-60 shadow-lg">
           <div className="absolute inset-0 bg-gradient-to-br from-green-950/85 via-emerald-900/65 to-slate-950/90" />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(152,213,148,0.24),transparent_32%)]" />
           <div className="relative h-full flex flex-col justify-end p-8">
@@ -220,7 +220,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       )}
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { icon: Newspaper, label: "Total Artikel", value: stats.total?.toLocaleString(), change: "7d", up: true, color: cc.c1 },
           { icon: Hash, label: "Sumber Berita", value: stats.sources?.toString(), change: `${stats.sources}`, up: true, color: cc.c2 },
@@ -243,7 +243,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       </div>
 
       {/* Row 1: Sentimen Pie + Kategori Bar */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen</h3>
           <ResponsiveContainer width="100%" height={320}>
@@ -342,8 +342,8 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       </div>
 
       {/* Row 2: Top Kecamatan (2/7) + Tren Berita Harian (5/7) with Brush */}
-      <div className="grid grid-cols-7 gap-4">
-        <div className="col-span-2" style={cardStyle}>
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+        <div className="md:col-span-2" style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Kecamatan</h3>
           <div style={{ height: 400, overflowY: "auto" }}>
             <ResponsiveContainer width="100%" height={Math.max(400, kecData.length * 28)}>
@@ -359,7 +359,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
           </div>
         </div>
 
-        <div className="col-span-5" style={cardStyle}>
+        <div className="md:col-span-5" style={cardStyle}>
           <div className="flex items-start justify-between mb-4">
             <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
               Tren Berita Harian
@@ -404,7 +404,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       </div>
 
       {/* Bottom row: Sumber Berita (scrollable) + Pie Sumber */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sumber Berita</h3>
           <div style={{ height: 300, overflowY: "auto" }}>
@@ -422,7 +422,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
         </div>
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Proporsi Sumber Berita</h3>
-          <div className="grid grid-cols-[minmax(0,1fr)_180px] gap-4 items-center">
+          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_180px] gap-4 items-center">
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie data={sourcePieData} cx="50%" cy="50%" innerRadius={55} outerRadius={92}

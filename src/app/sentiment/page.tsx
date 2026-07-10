@@ -263,7 +263,7 @@ export default function SentimentPage() {
       </div>
 
       {/* Overview Cards with 7d Delta */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {overview.map((o: any) => (
           <div key={o.name} className="card-hover rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <div className="flex items-center justify-between mb-2">
@@ -283,7 +283,7 @@ export default function SentimentPage() {
       </div>
 
       {/* Sentimen per Kecamatan + Proporsi */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen per Kecamatan</h3>
           <div style={{ height: 400, overflowY: "auto" }}>
@@ -306,7 +306,7 @@ export default function SentimentPage() {
       </div>
 
       {/* Sentimen by Category + Proporsi */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen per Kategori</h3>
           <ResponsiveContainer width="100%" height={300}>

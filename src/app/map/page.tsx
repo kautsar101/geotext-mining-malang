@@ -229,6 +229,7 @@ export default function MapPage() {
         return div;
       };
       legend.addTo(map);
+      map.invalidateSize();
       mapInstanceRef.current = map;
     })();
     return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
@@ -277,9 +278,9 @@ export default function MapPage() {
         </div>
       </div>
 
-      <div className="flex gap-4">
-        <div ref={mapRef} style={{ height: 520, borderColor: "var(--border)", flex: selectedKec ? "0 0 55%" : "1" }}
-          className="rounded-xl overflow-hidden shadow-sm border transition-all duration-300">
+      <div className="flex flex-col md:flex-row gap-4">
+        <div ref={mapRef} style={{ height: 520, borderColor: "var(--border)" }}
+          className="w-full md:flex-1 md:min-w-0 rounded-xl overflow-hidden shadow-sm border transition-all duration-300">
           {loading && (
             <div className="flex items-center justify-center h-full" style={{ backgroundColor: "var(--bg-card)" }}>
               <MapIcon size={32} style={{ color: "var(--text-muted)" }} className="animate-pulse" />
@@ -288,7 +289,7 @@ export default function MapPage() {
         </div>
 
         {selectedKec && (
-          <div className="rounded-xl p-4 shadow-sm overflow-y-auto" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", flex: "0 0 42%", maxHeight: 520 }}>
+          <div className="rounded-xl p-4 shadow-sm overflow-y-auto w-full md:basis-[42%] md:max-h-[520px] md:min-w-0" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{selectedKec}</h3>
               <button onClick={() => setSelectedKec(null)} className="p-1 rounded-lg hover:bg-black/10 transition-colors" style={{ color: "var(--text-muted)" }}>
@@ -388,7 +389,7 @@ export default function MapPage() {
       {/* Kecamatan List with 7d Delta */}
       <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>Daftar Kecamatan</h3>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
           {statsWithDelta.map((s, i) => {
             const layerInfo = getLayerInfo(s.name);
             return (
