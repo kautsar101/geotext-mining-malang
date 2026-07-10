@@ -4,6 +4,8 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, Brush, Line, LineChart } from "recharts";
 import { ChevronDown, TrendingDown, TrendingUp } from "lucide-react";
+import AnimatedNumber from "@/frontend/components/AnimatedNumber";
+import ViewportChart from "@/frontend/components/ViewportChart";
 
 const API = "/api/db?table=clean_news_articles";
 
@@ -91,7 +93,7 @@ function KecPieSection({ kecProps, cc }: { kecProps: KecProp[]; cc: typeof C }) 
           <div className="grid grid-cols-3 gap-3 w-full max-w-xs text-center">
             {([["Positif", data.pCount, cc.c2], ["Netral", data.nCount, cc.c6], ["Negatif", data.negCount, cc.c5]] as const).map(([label, count, color]) => (
               <div key={label} className="rounded-xl p-3" style={{ backgroundColor: "var(--bg-secondary)" }}>
-                <div className="text-xl font-bold" style={{ color }}>{count}</div>
+                <div className="text-xl font-bold" style={{ color }}><AnimatedNumber value={count} /></div>
                 <div className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{label}</div>
                 <div className="text-[10px] font-medium" style={{ color }}>
                   {data.positive + data.neutral + data.negative > 0
@@ -132,9 +134,9 @@ function KecSinglePieLarge({ data, cc }: { data: KecProp; cc: typeof C }) {
   };
 
   return (
-    <div className="flex flex-col items-center">
+    <ViewportChart className="flex flex-col items-center">{(isVisible) => <>
       <PieChart width={260} height={260}>
-        <Pie data={pieData} cx={125} cy={125} outerRadius={115} dataKey="value" labelLine={false} label={renderLabel}>
+        <Pie data={pieData} cx={125} cy={125} outerRadius={115} dataKey="value" labelLine={false} label={renderLabel} isAnimationActive={isVisible}>
           {pieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
         </Pie>
         <Tooltip
@@ -150,7 +152,7 @@ function KecSinglePieLarge({ data, cc }: { data: KecProp; cc: typeof C }) {
           </span>
         ))}
       </div>
-    </div>
+    </>}</ViewportChart>
   );
 }
 
@@ -297,7 +299,8 @@ export default function SentimentPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="sticky top-[-5rem] z-[1000] -mx-4 pb-4 pl-20 pr-4 pt-1 lg:top-[-2rem] lg:-mx-8 lg:px-8"
+        style={{ background: "linear-gradient(to bottom, var(--bg-primary) 0%, color-mix(in srgb, var(--bg-primary) 98%, transparent) 38%, color-mix(in srgb, var(--bg-primary) 90%, transparent) 60%, color-mix(in srgb, var(--bg-primary) 66%, transparent) 82%, transparent 100%)" }}>
         <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>Analisis Sentimen</h2>
         <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Distribusi sentimen berita Kabupaten Malang</p>
       </div>
@@ -317,7 +320,7 @@ export default function SentimentPage() {
                 {o.delta !== 0 ? (o.delta > 0 ? "+" : "") + o.delta : "—"}
               </span>
             </div>
-            <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{o.value.toLocaleString()}</p>
+            <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}><AnimatedNumber value={o.value} /></p>
           </div>
         ))}
       </div>
@@ -326,19 +329,41 @@ export default function SentimentPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen per Kecamatan</h3>
-          <div style={{ height: 400, overflowY: "auto" }}>
-            <ResponsiveContainer width="100%" height={Math.max(400, byKec.length * 30)}>
+          <div style={{ height: 352, overflowY: "auto" }}>
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={Math.max(352, byKec.length * 30)}>
               <BarChart data={byKec} layout="vertical" margin={{ left: 10, right: 10 }} barSize={16}>
                 <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: cc.tm }} />
+                <XAxis type="number" hide />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 8, fill: cc.ts }} width={75} />
                 <Tooltip contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
-                <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 11 }}>{v}</span>} />
-                <Bar dataKey="positive" stackId="a" fill={cc.c2} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="neutral" stackId="a" fill={cc.c6} />
-                <Bar dataKey="negative" stackId="a" fill={cc.c5} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="positive" stackId="a" fill={cc.c2} radius={[0, 0, 0, 0]} isAnimationActive={isVisible} />
+                <Bar dataKey="neutral" stackId="a" fill={cc.c6} isAnimationActive={isVisible} />
+                <Bar dataKey="negative" stackId="a" fill={cc.c5} radius={[4, 4, 0, 0]} isAnimationActive={isVisible} />
+              </BarChart>
+            </ResponsiveContainer>}</ViewportChart>
+          </div>
+          <div className="pointer-events-none h-12 pt-3" style={{ background: "linear-gradient(to top, var(--bg-card) 48%, color-mix(in srgb, var(--bg-card) 86%, transparent) 76%, transparent 100%)" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={byKec.map(d => ({ value: d.positive + d.neutral + d.negative }))} layout="vertical" margin={{ left: 85, right: 10, top: 0, bottom: 0 }}>
+                <XAxis type="number" domain={[0, "dataMax"]} tickCount={4} tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} />
+                <YAxis type="category" hide />
+                <Bar dataKey="value" fill="transparent" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+          <div className="flex justify-center gap-5 pt-2 pb-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: cc.c2 }} />
+              Positif
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: cc.c6 }} />
+              Netral
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: cc.c5 }} />
+              Negatif
+            </span>
           </div>
         </div>
 
@@ -349,23 +374,23 @@ export default function SentimentPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen per Kategori</h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={300}>
             <BarChart data={byCat} margin={{ left: 10, right: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} />
               <XAxis dataKey="name" tick={{ fontSize: 9, fill: cc.tm }} angle={-20} textAnchor="end" height={50} />
               <YAxis tick={{ fontSize: 10, fill: cc.tm }} />
               <Tooltip contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
               <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 11 }}>{v}</span>} />
-              <Bar dataKey="positive" stackId="a" fill={cc.c2} radius={[0, 0, 0, 0]} />
-              <Bar dataKey="neutral" stackId="a" fill={cc.c6} />
-              <Bar dataKey="negative" stackId="a" fill={cc.c5} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="positive" stackId="a" fill={cc.c2} radius={[0, 0, 0, 0]} isAnimationActive={isVisible} />
+              <Bar dataKey="neutral" stackId="a" fill={cc.c6} isAnimationActive={isVisible} />
+              <Bar dataKey="negative" stackId="a" fill={cc.c5} radius={[4, 4, 0, 0]} isAnimationActive={isVisible} />
             </BarChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>}</ViewportChart>
         </div>
 
         <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Proporsi Sentimen per Kategori</h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={300}>
             <BarChart data={catProps} layout="vertical" margin={{ left: 10, right: 30 }} barSize={22}>
               <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 10, fill: cc.tm }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
@@ -373,11 +398,11 @@ export default function SentimentPage() {
               <Tooltip formatter={(v: any) => [`${v}%`, ""] as unknown as [string, string]}
                 contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
               <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 11 }}>{v}</span>} />
-              <Bar dataKey="positive" stackId="a" fill={cc.c2} radius={[0, 0, 0, 0]} />
-              <Bar dataKey="neutral" stackId="a" fill={cc.c6} />
-              <Bar dataKey="negative" stackId="a" fill={cc.c5} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="positive" stackId="a" fill={cc.c2} radius={[0, 0, 0, 0]} isAnimationActive={isVisible} />
+              <Bar dataKey="neutral" stackId="a" fill={cc.c6} isAnimationActive={isVisible} />
+              <Bar dataKey="negative" stackId="a" fill={cc.c5} radius={[4, 4, 0, 0]} isAnimationActive={isVisible} />
             </BarChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>}</ViewportChart>
         </div>
       </div>
 
@@ -413,7 +438,7 @@ export default function SentimentPage() {
             )}
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={400}>
+        <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={400}>
           <LineChart data={dailyTrend} margin={{ top: 8, right: 12, left: -8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} />
             <XAxis dataKey="date" tick={{ fontSize: 9, fill: cc.tm }} minTickGap={48} tickFormatter={(date) => date.slice(5)} />
@@ -423,11 +448,11 @@ export default function SentimentPage() {
               contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }}
             />
             <Brush dataKey="date" height={30} stroke={cc.ts} fill={cc.bg} tickFormatter={(date) => date.slice(5)} />
-            {visibleTrends.positive && <Line type="linear" dataKey="positive" name="Positif" stroke={cc.c2} strokeWidth={2} dot={false} activeDot={false} />}
-            {visibleTrends.neutral && <Line type="linear" dataKey="neutral" name="Netral" stroke={cc.c6} strokeWidth={2} dot={false} activeDot={false} />}
-            {visibleTrends.negative && <Line type="linear" dataKey="negative" name="Negatif" stroke={cc.c5} strokeWidth={2} dot={false} activeDot={false} />}
+            {visibleTrends.positive && <Line type="linear" dataKey="positive" name="Positif" stroke={cc.c2} strokeWidth={2} dot={false} activeDot={false} isAnimationActive={isVisible} />}
+            {visibleTrends.neutral && <Line type="linear" dataKey="neutral" name="Netral" stroke={cc.c6} strokeWidth={2} dot={false} activeDot={false} isAnimationActive={isVisible} />}
+            {visibleTrends.negative && <Line type="linear" dataKey="negative" name="Negatif" stroke={cc.c5} strokeWidth={2} dot={false} activeDot={false} isAnimationActive={isVisible} />}
           </LineChart>
-        </ResponsiveContainer>
+        </ResponsiveContainer>}</ViewportChart>
       </div>
     </div>
   );

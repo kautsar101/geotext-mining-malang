@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState, useRef } from "react";
 import { X, MapIcon, TrendingUp, TrendingDown } from "lucide-react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, Brush } from "recharts";
+import ViewportChart from "@/frontend/components/ViewportChart";
 
 const API = "/api/db?table=clean_news_articles";
 const CATEGORY_LAYERS = ["sosial", "ekonomi", "pendidikan", "kesehatan"];
@@ -239,7 +240,8 @@ export default function MapPage() {
 
   return (
     <div className="space-y-4">
-      <div>
+      <div className="sticky top-[-5rem] z-[1200] -mx-4 pb-4 pl-20 pr-4 pt-1 lg:top-[-2rem] lg:-mx-8 lg:px-8"
+        style={{ background: "linear-gradient(to bottom, var(--bg-primary) 0%, color-mix(in srgb, var(--bg-primary) 98%, transparent) 38%, color-mix(in srgb, var(--bg-primary) 90%, transparent) 60%, color-mix(in srgb, var(--bg-primary) 66%, transparent) 82%, transparent 100%)" }}>
         <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>Peta Spasial</h2>
         <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Klik kecamatan untuk melihat detail berita dan analisis sentimen</p>
       </div>
@@ -258,6 +260,9 @@ export default function MapPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl p-3 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-xs transition-colors"
             style={{ backgroundColor: activeLayer === "count" ? "var(--accent)" : "var(--bg-primary)", color: activeLayer === "count" ? "#fff" : "var(--text-secondary)" }}>
@@ -289,8 +294,9 @@ export default function MapPage() {
         </div>
 
         {selectedKec && (
-          <div className="rounded-xl p-4 shadow-sm overflow-y-auto w-full md:basis-[42%] md:max-h-[520px] md:min-w-0" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
-            <div className="flex items-center justify-between mb-3">
+          <div className="relative rounded-xl p-4 shadow-sm overflow-y-auto w-full md:basis-[42%] md:max-h-[520px] md:min-w-0" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
+            <div className="sticky top-[-1rem] z-20 -mx-4 mb-3 flex items-center justify-between px-4 pb-3 pt-4"
+              style={{ background: "linear-gradient(to bottom, var(--bg-card) 0%, color-mix(in srgb, var(--bg-card) 98%, transparent) 38%, color-mix(in srgb, var(--bg-card) 90%, transparent) 60%, color-mix(in srgb, var(--bg-card) 66%, transparent) 82%, transparent 100%)" }}>
               <h3 className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{selectedKec}</h3>
               <button onClick={() => setSelectedKec(null)} className="p-1 rounded-lg hover:bg-black/10 transition-colors" style={{ color: "var(--text-muted)" }}>
                 <X size={16} />
@@ -300,31 +306,31 @@ export default function MapPage() {
             {/* Real Date Trend */}
             <div className="mb-4">
               <h4 className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Tren Berita</h4>
-              <ResponsiveContainer width="100%" height={140}>
+              <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={140}>
                 <AreaChart data={kecTrend}>
                   <defs><linearGradient id="wkGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4bb062" stopOpacity={0.3} /><stop offset="95%" stopColor="#4bb062" stopOpacity={0} /></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="date" tick={{ fontSize: 7, fill: "var(--text-muted)" }} />
                   <YAxis hide />
                   <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 10 }} />
-                  <Area type="monotone" dataKey="berita" stroke="#4bb062" fill="url(#wkGrad)" strokeWidth={2} dot={false} />
+                  <Area type="monotone" dataKey="berita" stroke="#4bb062" fill="url(#wkGrad)" strokeWidth={2} dot={false} isAnimationActive={isVisible} />
                   <Brush dataKey="date" height={24} stroke="#157f3b" fill="var(--bg-card)" travellerWidth={8} gap={1} style={{ color: "var(--text-secondary)", fontSize: 8 }} />
                 </AreaChart>
-              </ResponsiveContainer>
+              </ResponsiveContainer>}</ViewportChart>
             </div>
 
             {/* Sentiment Pie */}
             <div className="mb-4">
               <h4 className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Analisa Sentimen</h4>
-              <ResponsiveContainer width="100%" height={120}>
+              <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={120}>
                 <PieChart>
-                  <Pie data={kecSentiment} cx="50%" cy="50%" innerRadius={25} outerRadius={48} paddingAngle={3} dataKey="value">
+                  <Pie data={kecSentiment} cx="50%" cy="50%" innerRadius={25} outerRadius={48} paddingAngle={3} dataKey="value" isAnimationActive={isVisible}>
                     {kecSentiment.map((_, i) => <Cell key={i} fill={sentColors[i % sentColors.length]} />)}
                   </Pie>
                   <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 10, padding: 6 }}
                     formatter={(v: any) => [v, "Artikel"] as [string, string]} />
                 </PieChart>
-              </ResponsiveContainer>
+              </ResponsiveContainer>}</ViewportChart>
               <div className="flex gap-2 justify-center text-[10px] mt-1">
                 {kecSentiment.map((s: any, i: number) => (
                   <span key={i} style={{ color: "var(--text-muted)" }}>
@@ -339,17 +345,17 @@ export default function MapPage() {
             <div className="mb-4">
               <h4 className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Proporsi Sentimen per Kategori</h4>
               {kecSentByCat.length > 0 ? (
-                <ResponsiveContainer width="100%" height={100}>
+                <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={100}>
                   <BarChart data={kecSentByCat} margin={{ left: 0, right: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 7, fill: "var(--text-muted)" }} />
                     <YAxis hide />
                     <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 9 }} />
-                    <Bar dataKey="positive" stackId="a" fill="#4bb062" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="neutral" stackId="a" fill="#EAB308" />
-                    <Bar dataKey="negative" stackId="a" fill="#E11D48" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="positive" stackId="a" fill="#4bb062" radius={[0, 0, 0, 0]} isAnimationActive={isVisible} />
+                    <Bar dataKey="neutral" stackId="a" fill="#EAB308" isAnimationActive={isVisible} />
+                    <Bar dataKey="negative" stackId="a" fill="#E11D48" radius={[4, 4, 0, 0]} isAnimationActive={isVisible} />
                   </BarChart>
-                </ResponsiveContainer>
+                </ResponsiveContainer>}</ViewportChart>
               ) : (
                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>Tidak ada data kategori</p>
               )}
@@ -394,7 +400,7 @@ export default function MapPage() {
             const layerInfo = getLayerInfo(s.name);
             return (
               <button key={i} onClick={() => selectKecamatan(s.name)}
-                className={`flex items-center justify-between px-3 py-1.5 rounded-lg transition-all text-left ${selectedKec === s.name ? "ring-2 ring-orange-500" : ""}`}
+                className={`flex items-center justify-between px-3 py-1.5 rounded-lg transition-all text-left ${selectedKec === s.name ? "ring-2 ring-[var(--accent)]" : ""}`}
                 style={{ backgroundColor: "var(--bg-primary)" }}>
                 <div className="flex flex-col min-w-0">
                   <span className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>{s.name}</span>

@@ -11,6 +11,8 @@ import {
   ChevronLeft, ChevronRight, ExternalLink,
   ArrowUpRight, ArrowDownRight, Activity, FileText
 } from "lucide-react";
+import AnimatedNumber from "@/frontend/components/AnimatedNumber";
+import ViewportChart from "@/frontend/components/ViewportChart";
 
 const API = "/api/db?table=clean_news_articles";
 function fetcher(params: string) {
@@ -177,7 +179,8 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="sticky top-[-5rem] z-[1000] -mx-4 flex items-center justify-between pb-4 pl-20 pr-4 pt-1 lg:top-[-2rem] lg:-mx-8 lg:px-8"
+        style={{ background: "linear-gradient(to bottom, var(--bg-primary) 0%, color-mix(in srgb, var(--bg-primary) 98%, transparent) 38%, color-mix(in srgb, var(--bg-primary) 90%, transparent) 60%, color-mix(in srgb, var(--bg-primary) 66%, transparent) 82%, transparent 100%)" }}>
         <div>
           <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>Dashboard</h2>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Geotext Mining Kabupaten Malang</p>
@@ -222,10 +225,10 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       {/* Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { icon: Newspaper, label: "Total Artikel", value: stats.total?.toLocaleString(), change: "7d", up: true, color: cc.c1 },
-          { icon: Hash, label: "Sumber Berita", value: stats.sources?.toString(), change: `${stats.sources}`, up: true, color: cc.c2 },
-          { icon: MapPin, label: "Kecamatan", value: stats.kecamatan?.toString(), change: "33", up: true, color: cc.c3 },
-          { icon: TrendingUp, label: "Sentimen Positif", value: `${pRatio}%`, change: `${stats.sentimentPos}`, up: pRatio > 50, color: pRatio > 50 ? cc.c2 : cc.c5 },
+          { icon: Newspaper, label: "Total Artikel", value: stats.total || 0, change: "7d", up: true, color: cc.c1 },
+          { icon: Hash, label: "Sumber Berita", value: stats.sources || 0, change: `${stats.sources}`, up: true, color: cc.c2 },
+          { icon: MapPin, label: "Kecamatan", value: stats.kecamatan || 0, change: "33", up: true, color: cc.c3 },
+          { icon: TrendingUp, label: "Sentimen Positif", value: pRatio, suffix: "%", change: `${stats.sentimentPos}`, up: pRatio > 50, color: pRatio > 50 ? cc.c2 : cc.c5 },
         ].map((m, i) => (
           <div key={i} style={cardStyle} className="card-hover">
             <div className="flex items-center justify-between mb-3">
@@ -236,7 +239,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                 7d {m.up ? <ArrowUpRight size={11} className="text-emerald-600" /> : <ArrowDownRight size={11} className="text-rose-600" />}
               </span>
             </div>
-            <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{m.value}</p>
+            <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}><AnimatedNumber value={m.value} suffix={m.suffix} /></p>
             <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{m.label}</p>
           </div>
         ))}
@@ -246,10 +249,10 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen</h3>
-          <ResponsiveContainer width="100%" height={320}>
+          <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={320}>
             <PieChart>
               <Pie data={sentimentData} cx="50%" cy="50%" innerRadius={75} outerRadius={115}
-                paddingAngle={4} dataKey="value"
+                paddingAngle={4} dataKey="value" isAnimationActive={isVisible}
                 label={({ name, value, percent }: any) => `${name}: ${value.toLocaleString()} (${(percent * 100).toFixed(0)}%)`}
                 labelLine={{ stroke: cc.tm, strokeWidth: 0.5, strokeDasharray: "2 2" }}>
                 {sentimentData.map((_, i) => <Cell key={i} fill={SENT_COLORS[i % SENT_COLORS.length]} />)}
@@ -269,20 +272,20 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                 contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
               <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 12 }}>{v}</span>} />
             </PieChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>}</ViewportChart>
         </div>
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Kategori Berita</h3>
-          <ResponsiveContainer width="100%" height={320}>
+          <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={320}>
             <BarChart data={categoryData} layout="vertical" margin={{ left: 10, right: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 10, fill: cc.tm }} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: cc.ts }} width={80} />
               <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
                 contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={cc.primary} />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={cc.primary} isAnimationActive={isVisible} />
             </BarChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer>}</ViewportChart>
         </div>
       </div>
 
@@ -345,15 +348,24 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
         <div className="md:col-span-2" style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Kecamatan</h3>
-          <div style={{ height: 400, overflowY: "auto" }}>
-            <ResponsiveContainer width="100%" height={Math.max(400, kecData.length * 28)}>
+          <div style={{ height: 352, overflowY: "auto" }}>
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={Math.max(352, kecData.length * 28)}>
               <BarChart data={kecData} layout="vertical" margin={{ left: 10, right: 10 }} barSize={14}>
                 <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 9, fill: cc.tm }} />
+                <XAxis type="number" domain={[0, "dataMax"]} hide />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 8, fill: cc.ts }} width={75} />
                 <Tooltip formatter={(v: any) => [v.toLocaleString(), "Berita"] as [string, string]}
                   contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.primary} />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.primary} isAnimationActive={isVisible} />
+              </BarChart>
+            </ResponsiveContainer>}</ViewportChart>
+          </div>
+          <div className="pointer-events-none h-12 pt-3" style={{ background: "linear-gradient(to top, var(--bg-card) 48%, color-mix(in srgb, var(--bg-card) 86%, transparent) 76%, transparent 100%)" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={kecData} layout="vertical" margin={{ left: 85, right: 10, top: 0, bottom: 0 }}>
+                <XAxis type="number" domain={[0, "dataMax"]} tickCount={4} tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} />
+                <YAxis type="category" hide />
+                <Bar dataKey="value" fill="transparent" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -369,7 +381,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
             </span>
           </div>
           <div style={{ height: 400 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ViewportChart className="h-full">{(isVisible) => <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={dailyData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
                 <defs>
                   <linearGradient id={lineChartId} x1="0" y1="0" x2="0" y2="1">
@@ -382,22 +394,22 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                 <XAxis dataKey="date" tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} interval="preserveStartEnd" minTickGap={30} />
                 <YAxis tick={{ fontSize: 10, fill: cc.tm }} axisLine={false} tickLine={false} width={35} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: cc.tm, strokeDasharray: "3 3" }} />
-                <Area type="monotone" dataKey="value" stroke={cc.c2} strokeWidth={2.5} fill={`url(#${lineChartId})`} dot={false}
-                  activeDot={{ r: 5, fill: cc.bg, stroke: cc.c2, strokeWidth: 3 }} isAnimationActive={false} />
+                <Area type="monotone" dataKey="value" stroke={cc.c2} strokeWidth={2.5} fill={`url(#${lineChartId})`} dot={false} isAnimationActive={isVisible}
+                  activeDot={{ r: 5, fill: cc.bg, stroke: cc.c2, strokeWidth: 3 }} />
                 <Brush dataKey="date" height={28} stroke={cc.tm} fill={cc.bg} travellerWidth={10} gap={1} style={{ color: cc.ts, fontSize: 9 }}>
                   <AreaChart data={dailyData}>
                     <Area type="monotone" dataKey="value" stroke={cc.c2} fill={cc.c2 + "30"} isAnimationActive={false} />
                   </AreaChart>
                 </Brush>
               </AreaChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer>}</ViewportChart>
           </div>
           <div className="flex items-center justify-between mt-2 px-1">
             <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-              <span className="opacity-50">{dailyData.length} hari total</span>
+              <span className="opacity-50"><AnimatedNumber value={dailyData.length} /> hari total</span>
             </span>
             <span className="text-[10px] font-medium" style={{ color: cc.c2 }}>
-              {dailyData.reduce((sum, d) => sum + d.value, 0).toLocaleString()} total berita
+              <AnimatedNumber value={dailyData.reduce((sum, d) => sum + d.value, 0)} /> total berita
             </span>
           </div>
         </div>
@@ -408,14 +420,23 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sumber Berita</h3>
           <div style={{ height: 300, overflowY: "auto" }}>
-            <ResponsiveContainer width="100%" height={Math.max(300, sourceData.length * 26)}>
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={Math.max(300, sourceData.length * 26)}>
               <BarChart data={sourceData} layout="vertical" margin={{ left: 10, right: 20 }} barSize={12}>
                 <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 9, fill: cc.tm }} />
+                <XAxis type="number" domain={[0, "dataMax"]} hide />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 8, fill: cc.ts }} width={90} />
                 <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
                   contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.secondary} />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.secondary} isAnimationActive={isVisible} />
+              </BarChart>
+            </ResponsiveContainer>}</ViewportChart>
+          </div>
+          <div className="pointer-events-none h-12 pt-3" style={{ background: "linear-gradient(to top, var(--bg-card) 48%, color-mix(in srgb, var(--bg-card) 86%, transparent) 76%, transparent 100%)" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sourceData} layout="vertical" margin={{ left: 100, right: 20, top: 0, bottom: 0 }}>
+                <XAxis type="number" domain={[0, "dataMax"]} tickCount={4} tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} />
+                <YAxis type="category" hide />
+                <Bar dataKey="value" fill="transparent" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -423,10 +444,10 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Proporsi Sumber Berita</h3>
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_180px] gap-4 items-center">
-            <ResponsiveContainer width="100%" height={300}>
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie data={sourcePieData} cx="50%" cy="50%" innerRadius={55} outerRadius={92}
-                  paddingAngle={3} dataKey="value">
+                  paddingAngle={3} dataKey="value" isAnimationActive={isVisible}>
                   {sourcePieData.map((d) => <Cell key={d.name} fill={d.color} />)}
                 </Pie>
                 <text x="50%" y="48%" textAnchor="middle" dominantBaseline="middle">
@@ -443,7 +464,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                   }}
                   contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
               </PieChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer>}</ViewportChart>
             <div className="max-h-[260px] overflow-y-auto pr-1 space-y-2">
               {sourcePieData.filter((d) => d.name !== "Lainnya").map((d) => (
                 <div key={d.name} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: `${d.color}12` }}>

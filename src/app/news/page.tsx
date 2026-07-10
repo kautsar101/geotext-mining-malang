@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useCallback } from "react";
 import { Search, ExternalLink, ChevronLeft, ChevronRight, X, ArrowUpDown, ArrowUp, ArrowDown, Calendar } from "lucide-react";
+import AnimatedNumber from "@/frontend/components/AnimatedNumber";
 
 const API = "/api/db?table=clean_news_articles";
 
@@ -125,9 +126,10 @@ export default function NewsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
+      <div className="sticky top-[-5rem] z-[1000] -mx-4 pb-4 pl-20 pr-4 pt-1 lg:top-[-2rem] lg:-mx-8 lg:px-8"
+        style={{ background: "linear-gradient(to bottom, var(--bg-primary) 0%, color-mix(in srgb, var(--bg-primary) 98%, transparent) 38%, color-mix(in srgb, var(--bg-primary) 90%, transparent) 60%, color-mix(in srgb, var(--bg-primary) 66%, transparent) 82%, transparent 100%)" }}>
         <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>List Berita</h2>
-        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>{totalFiltered} artikel ditemukan</p>
+        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}><AnimatedNumber value={totalFiltered} /> artikel ditemukan</p>
       </div>
 
       {/* Filters */}
@@ -256,8 +258,8 @@ export default function NewsPage() {
                 </div>
                 <span className="text-xs" style={{ color: "var(--text-muted)" }}>
                   {pageSize === 0
-                    ? `Menampilkan ${totalFiltered} dari ${totalFiltered}`
-                    : `Halaman ${page} dari ${totalPages} (${totalFiltered} total)`}
+                    ? <>Menampilkan <AnimatedNumber value={totalFiltered} /> dari <AnimatedNumber value={totalFiltered} /></>
+                    : <>Halaman {page} dari {totalPages} (<AnimatedNumber value={totalFiltered} /> total)</>}
                 </span>
               </div>
 

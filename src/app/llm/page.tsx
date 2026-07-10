@@ -98,6 +98,32 @@ function initialMessages(adminMode: boolean): ChatMessage[] {
   }];
 }
 
+function TypingAssistantContent({ text, sources }: { text: string; sources: Source[] }) {
+  const [visibleLength, setVisibleLength] = useState(0);
+  const [complete, setComplete] = useState(false);
+
+  useEffect(() => {
+    let frameId = 0;
+    let currentLength = 0;
+    const chunkSize = Math.max(4, Math.ceil(text.length / 36));
+
+    const typeNextChunk = () => {
+      currentLength = Math.min(text.length, currentLength + chunkSize);
+      setVisibleLength(currentLength);
+      if (currentLength < text.length) frameId = requestAnimationFrame(typeNextChunk);
+      else setComplete(true);
+    };
+
+    setVisibleLength(0);
+    setComplete(false);
+    frameId = requestAnimationFrame(typeNextChunk);
+    return () => cancelAnimationFrame(frameId);
+  }, [text]);
+
+  if (complete) return <InlineContent text={text} sources={sources} />;
+  return <span className="whitespace-pre-wrap">{text.slice(0, visibleLength)}<span className="animate-pulse">|</span></span>;
+}
+
 export default function LLMPage() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => initialMessages(false));
   const [input, setInput] = useState("");
@@ -268,7 +294,9 @@ export default function LLMPage() {
           <div key={index} className={`flex animate-fade-in ${message.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`space-y-2 ${message.role === "user" ? "max-w-[92%] md:max-w-[86%]" : "max-w-[96%] lg:max-w-[90%]"}`}>
               <div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${message.role === "user" ? "text-white" : ""}`} style={message.role === "user" ? { backgroundColor: "var(--accent)" } : { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
-                <InlineContent text={message.content} sources={message.sources || []} />
+                {message.role === "assistant"
+                  ? <TypingAssistantContent text={message.content} sources={message.sources || []} />
+                  : <InlineContent text={message.content} sources={message.sources || []} />}
                 {message.role === "assistant" && message.tableData && message.tableData.rows.length > 0 && (
                   <button onClick={() => setActiveTableIndex(activeTableIndex === index ? null : index)} className="mt-2 rounded-lg px-3 py-1 text-xs transition-colors hover:opacity-80" style={{ backgroundColor: activeTableIndex === index ? "var(--accent)" : "color-mix(in srgb, var(--accent) 15%, transparent)", color: activeTableIndex === index ? "#fff" : "var(--accent)", border: "1px solid var(--accent)" }}>
                     {activeTableIndex === index ? "Sembunyikan Tabel" : `Lihat Tabel (${message.tableData.rows.length})`}
