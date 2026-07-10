@@ -239,6 +239,7 @@ export async function handleLLMRequest(
     }
 
     // Map tablePanel dari SQL result (SELECT only) atau RAG sources
+    // ponytail: RAG panel hanya muncul kalo ada keyword/semantic match, bukan fallback terbaru
     if (sqlMeta === 'select' && Array.isArray(sqlResult) && sqlResult.length > 0) {
       tablePanel = {
         type: 'sql',
@@ -248,7 +249,7 @@ export async function handleLLMRequest(
           content: String(row.content_clean ?? row.snippet ?? ''),
         })),
       };
-    } else if (sources.length > 0) {
+    } else if (sources.length > 0 && !searchInfo.includes('terbaru')) {
       tablePanel = {
         type: 'rag',
         rows: sources.map(s => ({
@@ -309,6 +310,11 @@ export async function handleLLMRequest(
     });
 
     const answer = cleanModelText(await callLLM(finalMessages, 650, 0.3), query);
+
+    // ponytail: kalo LLM bilang data gak ditemukan, jangan tampilin RAG panel
+    if (tablePanel?.type === 'rag' && /tidak (ditemukan|tersedia|ada)/i.test(answer)) {
+      tablePanel = undefined;
+    }
 
     await recordExchange({
       sessionId: sid,
