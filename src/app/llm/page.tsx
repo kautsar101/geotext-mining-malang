@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Send, Maximize2, Minimize2 } from "lucide-react";
 import InlineContent from "@/frontend/components/InlineContent";
+import TablePanel from "@/frontend/components/TablePanel";
 
 type Source = {
   id: number;
@@ -16,12 +17,14 @@ type ChatMessage = {
   role: string;
   content: string;
   sources?: Source[];
+  tableData?: { type: "sql" | "rag"; rows: { title: string; url: string; content: string }[] };
   debug?: unknown;
 };
 
 type LLMResponsePayload = {
   response?: string;
   sources?: Source[];
+  tablePanel?: { type: "sql" | "rag"; rows: { title: string; url: string; content: string }[] };
   debug?: unknown;
   error?: string;
 };
@@ -103,6 +106,7 @@ export default function LLMPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeProcess, setActiveProcess] = useState("Mengirim pertanyaan...");
   const [chatFullscreen, setChatFullscreen] = useState(false);
+  const [activeTableIndex, setActiveTableIndex] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const sessionId = useRef(genSessionId());
 
@@ -118,6 +122,14 @@ export default function LLMPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // ponytail: auto-switch panel — cuma untuk last message assistant
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role === "assistant" && lastMsg.tableData && lastMsg.tableData.rows.length > 0) {
+      setActiveTableIndex(messages.length - 1);
+    }
+  }, [messages]);
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -126,6 +138,7 @@ export default function LLMPage() {
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setActiveProcess("Mengirim pertanyaan...");
     setIsLoading(true);
+    setActiveTableIndex(null); // tutup table, muncul lagi kalo response punya data
 
     try {
       const payload = { query: userMsg };
@@ -152,7 +165,7 @@ export default function LLMPage() {
       if (data.error) {
         setMessages(prev => [...prev, { role: "assistant", content: data.error || "Maaf, terjadi kendala saat memproses jawaban." }]);
       } else {
-        setMessages(prev => [...prev, { role: "assistant", content: data.response || "Maaf, respons kosong.", sources: data.sources || [], debug: data.debug }]);
+        setMessages(prev => [...prev, { role: "assistant", content: data.response || "Maaf, respons kosong.", sources: data.sources || [], tableData: data.tablePanel, debug: data.debug }]);
       }
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Gagal terhubung ke server." }]);
@@ -160,19 +173,10 @@ export default function LLMPage() {
     setIsLoading(false);
   };
 
-  const chatPanelStyle = chatFullscreen
-    ? {
-        backgroundColor: "var(--bg-card)",
-        borderColor: "var(--border)",
-        left: "var(--sidebar-width, 16rem)",
-        top: 0,
-        right: 0,
-        bottom: 0,
-      }
-    : { backgroundColor: "var(--bg-card)", borderColor: "var(--border)" };
+  const chatPanelStyle = { backgroundColor: "var(--bg-card)", borderColor: "var(--border)" };
 
   const chatPanel = (
-    <div className={`${chatFullscreen ? "fixed z-[100] rounded-none" : "relative flex-1 rounded-xl"} overflow-hidden flex flex-col shadow-sm border`}
+    <div className="relative flex-1 rounded-xl overflow-hidden flex flex-col shadow-sm border"
       style={chatPanelStyle}>
       {chatFullscreen && (
         <div
@@ -204,6 +208,17 @@ export default function LLMPage() {
               <div className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${m.role === "user" ? "text-white" : ""}`}
                 style={m.role === "user" ? { backgroundColor: "var(--accent)" } : { backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
                 <InlineContent text={m.content} sources={m.sources || []} />
+                {m.role === "assistant" && m.tableData && m.tableData.rows.length > 0 && (
+                  <button onClick={() => setActiveTableIndex(activeTableIndex === i ? null : i)}
+                    className="mt-2 px-3 py-1 text-xs rounded-lg transition-colors hover:opacity-80"
+                    style={{
+                      backgroundColor: activeTableIndex === i ? "var(--accent)" : "color-mix(in srgb, var(--accent) 15%, transparent)",
+                      color: activeTableIndex === i ? "#fff" : "var(--accent)",
+                      border: "1px solid var(--accent)",
+                    }}>
+                    {activeTableIndex === i ? "Sembunyikan Table" : `Lihat Table (${m.tableData.rows.length})`}
+                  </button>
+                )}
                 {/* ponytail: debug panel removed — not exposed to client */}
               </div>
             </div>
@@ -247,7 +262,6 @@ export default function LLMPage() {
         <div>
           <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>AI Assistant Chatbot</h2>
         </div>
-        {/* ponytail: debug button removed — no longer needed */}
       </div>
 
       <div className="text-[10px] px-3 py-1.5 rounded-lg mb-3 flex items-center gap-1.5"
@@ -255,7 +269,41 @@ export default function LLMPage() {
         <span className="flex-shrink-0">⚠️</span>
         {AI_WARNING_TEXT}
       </div>
-      {chatFullscreen && typeof document !== "undefined" ? createPortal(chatPanel, document.body) : chatPanel}
+
+      {chatFullscreen && typeof document !== "undefined" ? (
+        createPortal(
+          <div className="fixed z-[100] flex"
+            style={{
+              left: "var(--sidebar-width, 16rem)",
+              top: 0, right: 0, bottom: 0,
+              backgroundColor: "var(--bg-card)",
+            }}>
+            <div className="flex-1 flex flex-col min-w-0">{chatPanel}</div>
+            {activeTableIndex !== null && messages[activeTableIndex]?.tableData && (
+              <div className="w-[420px] lg:w-[480px] flex-shrink-0 overflow-y-auto border-l"
+                style={{ borderColor: "var(--border)" }}>
+                <TablePanel
+                  data={messages[activeTableIndex].tableData!}
+                  onClose={() => setActiveTableIndex(null)}
+                />
+              </div>
+            )}
+          </div>,
+          document.body
+        )
+      ) : (
+        <div className="flex flex-1 min-h-0 gap-0">
+          <div className="flex-1 flex flex-col min-w-0">{chatPanel}</div>
+          {activeTableIndex !== null && messages[activeTableIndex]?.tableData && (
+            <div className="w-[420px] lg:w-[480px] flex-shrink-0 overflow-y-auto ml-3">
+              <TablePanel
+                data={messages[activeTableIndex].tableData!}
+                onClose={() => setActiveTableIndex(null)}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

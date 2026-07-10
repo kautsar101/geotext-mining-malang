@@ -223,6 +223,8 @@ export async function handleLLMRequest(
 
     let sources: Source[] = [];
     let searchInfo = '';
+    // ponytail: inline type — only used here and in response body (Record<string,unknown>)
+    let tablePanel: { type: 'sql' | 'rag'; rows: { title: string; url: string; content: string }[] } | undefined;
 
     if (intents.includes('rag')) {
       emitStep('search_documents', 'Mencari konteks berita...');
@@ -234,6 +236,27 @@ export async function handleLLMRequest(
       });
       sources = retrieval.sources;
       searchInfo = retrieval.searchInfo;
+    }
+
+    // Map tablePanel dari SQL result (SELECT only) atau RAG sources
+    if (sqlMeta === 'select' && Array.isArray(sqlResult) && sqlResult.length > 0) {
+      tablePanel = {
+        type: 'sql',
+        rows: (sqlResult as Record<string, unknown>[]).map(row => ({
+          title: String(row.title ?? ''),
+          url: String(row.url ?? ''),
+          content: String(row.content_clean ?? row.snippet ?? ''),
+        })),
+      };
+    } else if (sources.length > 0) {
+      tablePanel = {
+        type: 'rag',
+        rows: sources.map(s => ({
+          title: s.title ?? 'Sumber ' + s.id,
+          url: s.url ?? '',
+          content: (s.snippet ?? ''),
+        })),
+      };
     }
 
     emitStep('compose_answer', 'Menyusun jawaban...');
@@ -257,6 +280,7 @@ export async function handleLLMRequest(
         body: {
           response: directAnswer,
           sources,
+          tablePanel,
           processSteps,
           ...(includeDebug
             ? {
@@ -301,6 +325,7 @@ export async function handleLLMRequest(
       body: {
         response: answer,
         sources,
+        tablePanel,
         processSteps,
         ...(includeDebug
           ? {

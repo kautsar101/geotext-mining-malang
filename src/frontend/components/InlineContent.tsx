@@ -23,13 +23,11 @@ function renderMarkdown(text: string): React.ReactNode[] {
     const line = lines[li];
 
     if (isTableStart(lines, li)) {
-      const tableLines: string[] = [];
+      // ponytail: skip table lines — semua tabel ditampilkan di side panel
       while (li < lines.length && lines[li].trim().startsWith('|')) {
-        tableLines.push(lines[li]);
         li++;
       }
       li--;
-      parts.push(renderTable(tableLines, `table-${li}`));
       continue;
     }
 
