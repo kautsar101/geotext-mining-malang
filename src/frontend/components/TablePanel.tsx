@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { X } from "lucide-react";
 
-type TablePanelRow = { title: string; url: string; content: string };
+type TablePanelRow = { reference: number; title: string; url: string; content: string };
 type TablePanelData = { type: "sql" | "rag"; rows: TablePanelRow[] };
 
 interface TablePanelProps {
@@ -77,6 +77,12 @@ export default function TablePanel({ data, onClose }: TablePanelProps) {
           >
             <tr>
               <th
+                className="w-12 px-2 py-2 text-center font-semibold border-b"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+              >
+                Ref
+              </th>
+              <th
                 className="px-3 py-2 text-left font-semibold border-b relative select-none"
                 style={{
                   borderColor: "var(--border)",
@@ -108,7 +114,7 @@ export default function TablePanel({ data, onClose }: TablePanelProps) {
             {data.rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={2}
+                  colSpan={3}
                   className="px-3 py-8 text-center"
                   style={{ color: "var(--text-muted)" }}
                 >
@@ -122,6 +128,9 @@ export default function TablePanel({ data, onClose }: TablePanelProps) {
                   className="border-b last:border-b-0"
                   style={{ borderColor: "var(--border)" }}
                 >
+                  <td className="px-2 py-2 text-center align-top text-[10px] font-semibold" style={{ color: "var(--accent)" }}>
+                    {data.type === "rag" ? `[${row.reference}]` : row.reference}
+                  </td>
                   <td
                     className="px-3 py-2 align-top"
                     style={{

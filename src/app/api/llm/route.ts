@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ADMIN_SESSION_COOKIE, getAdminSession } from '@/backend/auth/admin';
 import { genSessionId, handleLLMRequest } from '@/backend/llm/service';
 import type { LLMProcessStep } from '@/backend/llm/types';
 
@@ -11,6 +12,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    const adminSession = await getAdminSession(request.cookies.get(ADMIN_SESSION_COOKIE)?.value);
+    const mode = adminSession ? 'admin' : 'guest';
 
     if (body?.stream === true) {
       const encoder = new TextEncoder();
@@ -23,6 +26,7 @@ export async function POST(request: NextRequest) {
 
           try {
             const result = await handleLLMRequest(body, fallbackSessionId, {
+              mode,
               onStep: (step: LLMProcessStep) => send('step', step),
             });
             send('result', result.body);
@@ -43,7 +47,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const result = await handleLLMRequest(body, fallbackSessionId);
+    const result = await handleLLMRequest(body, fallbackSessionId, { mode });
     return NextResponse.json(result.body, { status: result.status || 200 });
   } catch {
     return NextResponse.json({ error: 'Body JSON tidak valid' }, { status: 400 });

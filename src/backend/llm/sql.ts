@@ -1,5 +1,5 @@
 import { supabase } from '@/backend/db/supabase';
-import { callLLM } from './providers';
+import { callLLM, type LLMCallConfig } from './providers';
 import { normalizeQueryText, sanitizeInput } from './guardrails';
 
 type QueryBuilder = {
@@ -109,7 +109,7 @@ function extractSelectStatement(raw: string): string {
   return sqlLines.join(' ').replace(/\s+/g, ' ').trim();
 }
 
-export async function generateSQL(query: string): Promise<string> {
+export async function generateSQL(query: string, callConfig?: LLMCallConfig): Promise<string> {
   const safeQuery = sanitizeInput(query);
   const deterministicSQL = buildDeterministicSQL(safeQuery);
   if (deterministicSQL) return deterministicSQL;
@@ -144,7 +144,7 @@ SQL: SELECT id, title, url, content_clean, source FROM clean_news_articles WHERE
 User: "${safeQuery}"
 SQL:`;
 
-  const result = await callLLM([{ role: 'user', content: prompt }], 160, 0);
+  const result = await callLLM([{ role: 'user', content: prompt }], 160, 0, callConfig);
   const cleaned = extractSelectStatement(result).replace(/;$/, '');
   if (!/FROM\s+clean_news_articles/i.test(cleaned)) return 'SELECT COUNT(*) FROM clean_news_articles';
   return cleaned;

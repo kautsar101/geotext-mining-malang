@@ -1,6 +1,8 @@
 # LLM UI Eval
 
-Pakai halaman `/llm`, masukkan API key, lalu tanyakan prompt di bawah satu per satu.
+Pakai halaman `/llm`, lalu tanyakan prompt di bawah satu per satu.
+
+Mode guest adalah default dan memakai Groq dari key pool server. Mode admin memakai DeepSeek V4 Pro dari key pool database, mengambil maksimal 20 dokumen RAG, dan membawa 10 percakapan terakhir sebagai konteks. API key tidak pernah dimasukkan atau dikirim dari browser.
 
 Nilai manual:
 

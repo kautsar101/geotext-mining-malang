@@ -32,9 +32,32 @@ type AdminDatabase = {
         Update: Record<string, unknown>;
         Relationships: [];
       };
+      llm_admins: {
+        Row: Record<string, unknown>;
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+        Relationships: [];
+      };
+      llm_admin_sessions: {
+        Row: Record<string, unknown>;
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+        Relationships: [];
+      };
+      llm_admin_login_attempts: {
+        Row: Record<string, unknown>;
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      verify_llm_admin_credentials: {
+        Args: { p_username: string; p_password: string };
+        Returns: Array<{ id: string }>;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

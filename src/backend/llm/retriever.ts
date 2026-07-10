@@ -56,9 +56,28 @@ function cleanSearchTerm(term: string): string {
 function expandSearchTerms(terms: string[]): string[] {
   const expanded = new Set<string>(terms);
   if (terms.some((term) => ['kecelakaan', 'tabrakan', 'bertabrakan'].includes(term))) {
-    ['kecelakaan', 'tabrakan', 'bertabrakan', 'truk', 'motor'].forEach((term) => expanded.add(term));
+    ['kecelakaan', 'tabrakan', 'bertabrakan', 'tertabrak', 'laka lantas'].forEach((term) => expanded.add(term));
   }
   return Array.from(expanded).slice(0, 10);
+}
+
+function sourceRelevanceScore(source: RawSource, primaryTerms: string[], expandedTerms: string[]): number {
+  const title = String(source.title || '').toLowerCase();
+  const content = String(source.chunk_text || source.content_clean || '').toLowerCase();
+  let score = Number(source.similarity || 0) * 100;
+
+  for (const term of primaryTerms) {
+    if (title.includes(term)) score += 120;
+    if (content.includes(term)) score += 40;
+  }
+
+  for (const term of expandedTerms) {
+    if (primaryTerms.includes(term)) continue;
+    if (title.includes(term)) score += 24;
+    if (content.includes(term)) score += 8;
+  }
+
+  return score;
 }
 
 export async function parseRetrievalQuery(
@@ -92,6 +111,7 @@ export async function parseRetrievalQuery(
 export async function retrieveSources(
   queryText: string,
   filters: Pick<ParsedQuery, 'kecamatan' | 'kategori' | 'sentimen'>,
+  topK = RAG_TOP_K,
 ): Promise<{ sources: Source[]; searchInfo: string }> {
   const allSources: RawSource[] = [];
   const searchSteps: string[] = [];
@@ -112,7 +132,7 @@ export async function retrieveSources(
       const { data } = await supabase.rpc('match_news_embeddings', {
         query_embedding: embedding,
         match_threshold: 0.35,
-        match_count: RAG_TOP_K,
+        match_count: topK,
         filter_kecamatan: filters.kecamatan || null,
         filter_kategori: filters.kategori || null,
         filter_sentimen: filters.sentimen || null,
@@ -132,7 +152,7 @@ export async function retrieveSources(
   if (searchTerms[0]) {
     let q = supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
-      .limit(RAG_TOP_K);
+      .limit(topK);
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
@@ -149,7 +169,7 @@ export async function retrieveSources(
     let q = supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
       .order('published_date', { ascending: false })
-      .limit(RAG_TOP_K);
+      .limit(topK);
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
@@ -161,18 +181,10 @@ export async function retrieveSources(
     }
   }
 
-  if (allSources.length === 0) {
-    const { data } = await supabase.from('clean_news_articles')
-      .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
-      .order('published_date', { ascending: false })
-      .limit(RAG_TOP_K);
-    if (data && data.length > 0) {
-      allSources.push(...dedup(data as RawSource[]));
-      searchSteps.push('terbaru');
-    }
-  }
+  const rankedSources = [...allSources]
+    .sort((a, b) => sourceRelevanceScore(b, keywords, searchTerms) - sourceRelevanceScore(a, keywords, searchTerms));
 
-  const sources = allSources.slice(0, RAG_TOP_K).map((r, i) => ({
+  const sources = rankedSources.slice(0, topK).map((r, i) => ({
     id: i + 1,
     title: r.title,
     snippet: String(r.chunk_text || r.content_clean || '').slice(0, 420),

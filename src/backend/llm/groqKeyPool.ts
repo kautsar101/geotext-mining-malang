@@ -1,37 +1,37 @@
 import { getSupabaseAdmin } from '@/backend/db/supabase';
 
-export type GroqApiKeyRow = {
+export type DatabaseApiKeyRow = {
   id: string;
   api_key: string;
   failure_count: number | null;
   cooldown_until: string | null;
 };
 
-export type GroqFailureKind = 'rate_limit' | 'invalid_api_key' | 'server_error';
+export type ApiKeyFailureKind = 'rate_limit' | 'invalid_api_key' | 'server_error';
 
-export async function getAvailableGroqKeys(): Promise<GroqApiKeyRow[]> {
+export async function getAvailableProviderKeys(provider: 'groq' | 'deepseek'): Promise<DatabaseApiKeyRow[]> {
   const supabaseAdmin = getSupabaseAdmin();
   const now = Date.now();
 
   const { data, error } = await supabaseAdmin
     .from('llm_api_keys')
     .select('id, api_key, failure_count, cooldown_until')
-    .eq('provider', 'groq')
+    .eq('provider', provider)
     .eq('is_active', true)
     .order('priority', { ascending: true })
     .order('last_used_at', { ascending: true, nullsFirst: true })
     .limit(25);
 
-  if (error) throw new Error(`Gagal membaca Groq API key pool: ${error.message}`);
+  if (error) throw new Error(`Gagal membaca ${provider} API key pool: ${error.message}`);
 
-  return ((data || []) as GroqApiKeyRow[]).filter((row) => {
+  return ((data || []) as DatabaseApiKeyRow[]).filter((row) => {
     if (!row.api_key) return false;
     if (!row.cooldown_until) return true;
     return new Date(row.cooldown_until).getTime() <= now;
   });
 }
 
-export async function markGroqKeySuccess(keyId: string) {
+export async function markProviderKeySuccess(keyId: string) {
   const supabaseAdmin = getSupabaseAdmin();
   await supabaseAdmin
     .from('llm_api_keys')
@@ -45,9 +45,9 @@ export async function markGroqKeySuccess(keyId: string) {
     .eq('id', keyId);
 }
 
-export async function markGroqKeyFailure(
-  key: GroqApiKeyRow,
-  kind: GroqFailureKind,
+export async function markProviderKeyFailure(
+  key: DatabaseApiKeyRow,
+  kind: ApiKeyFailureKind,
   detail: string,
 ) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -70,7 +70,7 @@ export async function markGroqKeyFailure(
   await supabaseAdmin.from('llm_api_keys').update(update).eq('id', key.id);
 }
 
-export function classifyGroqFailure(status: number, body: string): GroqFailureKind | null {
+export function classifyProviderFailure(status: number, body: string): ApiKeyFailureKind | null {
   const text = body.toLowerCase();
 
   if (status === 401 || status === 403 || /invalid|unauthorized|forbidden|api key/.test(text)) {

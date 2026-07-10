@@ -2,7 +2,6 @@ import { getSupabaseAdmin, supabase } from '@/backend/db/supabase';
 import { callLLM } from './providers';
 import type { ChatMessage } from './types';
 
-const RECENT_LIMIT = 2;
 const COMPACT_AFTER_LOGS = 14;
 
 export type SessionMemory = {
@@ -16,7 +15,11 @@ type ChatLogRow = {
   response?: string | null;
 };
 
-export async function getSessionMemory(sessionId: string): Promise<SessionMemory> {
+export async function getSessionMemory(sessionId: string, recentTurnLimit = 0): Promise<SessionMemory> {
+  if (recentTurnLimit <= 0) {
+    return { summary: '', recentMessages: [], logCount: 0 };
+  }
+
   let summary = '';
 
   try {
@@ -36,7 +39,7 @@ export async function getSessionMemory(sessionId: string): Promise<SessionMemory
       .select('query_raw,response', { count: 'exact' })
       .eq('session_id', sessionId)
       .order('created_at', { ascending: false })
-      .limit(RECENT_LIMIT);
+      .limit(recentTurnLimit);
 
     const recentMessages = ((data || []) as ChatLogRow[])
       .reverse()
@@ -46,7 +49,7 @@ export async function getSessionMemory(sessionId: string): Promise<SessionMemory
         if (row.response) messages.push({ role: 'assistant', content: String(row.response).slice(0, 2200) });
         return messages;
       })
-      .slice(-RECENT_LIMIT);
+      .slice(-(recentTurnLimit * 2));
 
     return { summary, recentMessages, logCount: count || 0 };
   } catch {
