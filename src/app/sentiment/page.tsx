@@ -2,7 +2,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Legend, PieChart, Pie, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Legend, PieChart, Pie, Cell, Brush } from "recharts";
 import { TrendingUp, TrendingDown } from "lucide-react";
 
 const API = "/api/db?table=clean_news_articles";
@@ -282,7 +282,7 @@ export default function SentimentPage() {
         ))}
       </div>
 
-      {/* Sentimen per Kecamatan + Tren */}
+      {/* Sentimen per Kecamatan + Proporsi */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen per Kecamatan</h3>
@@ -302,28 +302,8 @@ export default function SentimentPage() {
           </div>
         </div>
 
-        <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
-          <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Tren Sentimen</h3>
-          <ResponsiveContainer width="100%" height={400}>
-            <AreaChart data={monthly}>
-              <defs>
-                <linearGradient id="posGradM" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={cc.c2} stopOpacity={0.3} /><stop offset="95%" stopColor={cc.c2} stopOpacity={0} /></linearGradient>
-                <linearGradient id="negGradM" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={cc.c5} stopOpacity={0.3} /><stop offset="95%" stopColor={cc.c5} stopOpacity={0} /></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} />
-              <XAxis dataKey="month" tick={{ fontSize: 9, fill: cc.tm }} />
-              <YAxis tick={{ fontSize: 10, fill: cc.tm }} />
-              <Tooltip contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
-              <Area type="monotone" dataKey="positive" stroke={cc.c2} fill="url(#posGradM)" strokeWidth={2} dot={false} />
-              <Area type="monotone" dataKey="neutral" stroke={cc.c6} fill="none" strokeWidth={2} dot={false} />
-              <Area type="monotone" dataKey="negative" stroke={cc.c5} fill="url(#negGradM)" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        <KecPieSection kecProps={kecProps} cc={cc} />
       </div>
-
-      {/* Proporsi Sentimen per Kecamatan — Pie Chart */}
-      <KecPieSection kecProps={kecProps} cc={cc} />
 
       {/* Sentimen by Category + Proporsi */}
       <div className="grid grid-cols-2 gap-4">
@@ -359,6 +339,27 @@ export default function SentimentPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Tren Sentimen — Full Width Bottom */}
+      <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Tren Sentimen</h3>
+        <ResponsiveContainer width="100%" height={400}>
+          <AreaChart data={monthly}>
+            <defs>
+              <linearGradient id="posGradM" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={cc.c2} stopOpacity={0.3} /><stop offset="95%" stopColor={cc.c2} stopOpacity={0} /></linearGradient>
+              <linearGradient id="negGradM" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={cc.c5} stopOpacity={0.3} /><stop offset="95%" stopColor={cc.c5} stopOpacity={0} /></linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} />
+            <XAxis dataKey="month" tick={{ fontSize: 9, fill: cc.tm }} />
+            <YAxis tick={{ fontSize: 10, fill: cc.tm }} />
+            <Tooltip contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
+            <Brush dataKey="month" height={30} stroke={cc.ts} fill={cc.bg} />
+            <Area type="monotone" dataKey="positive" stroke={cc.c2} fill="url(#posGradM)" strokeWidth={2} dot={false} />
+            <Area type="monotone" dataKey="neutral" stroke={cc.c6} fill="none" strokeWidth={2} dot={false} />
+            <Area type="monotone" dataKey="negative" stroke={cc.c5} fill="url(#negGradM)" strokeWidth={2} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );
