@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Geist, Geist_Mono } from "next/font/google";
 import Image from "next/image";
-import { LayoutGrid, Map, BarChart3, Newspaper, MessageSquare, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
+import { LayoutGrid, Map, BarChart3, Newspaper, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { label: "Peta Spasial", icon: Map, href: "/map" },
   { label: "Analisis Sentimen", icon: BarChart3, href: "/sentiment" },
   { label: "List Berita", icon: Newspaper, href: "/news" },
-  { label: "Tanya AI", icon: MessageSquare, href: "/llm" },
+  // { label: "Tanya AI", icon: MessageSquare, href: "/llm" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
