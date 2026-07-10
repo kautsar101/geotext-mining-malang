@@ -2,8 +2,8 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Legend, PieChart, Pie, Cell, Brush } from "recharts";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, Brush, Line, LineChart } from "recharts";
+import { ChevronDown, TrendingDown, TrendingUp } from "lucide-react";
 
 const API = "/api/db?table=clean_news_articles";
 
@@ -28,6 +28,38 @@ type KecProp = {
   pCount: number; nCount: number; negCount: number;
 };
 
+type DailyTrend = {
+  date: string;
+  positive: number;
+  neutral: number;
+  negative: number;
+};
+
+type TrendKey = "positive" | "neutral" | "negative";
+
+const TREND_OPTIONS: Array<{ key: TrendKey; label: string }> = [
+  { key: "positive", label: "Positif" },
+  { key: "neutral", label: "Netral" },
+  { key: "negative", label: "Negatif" },
+];
+
+function fillDailyTrend(days: Record<string, { pos: number; neu: number; neg: number }>): DailyTrend[] {
+  const dates = Object.keys(days).sort();
+  if (dates.length === 0) return [];
+
+  const cursor = new Date(`${dates[0]}T00:00:00Z`);
+  const end = dates[dates.length - 1];
+  const result: DailyTrend[] = [];
+
+  while (cursor.toISOString().slice(0, 10) <= end) {
+    const date = cursor.toISOString().slice(0, 10);
+    const values = days[date] || { pos: 0, neu: 0, neg: 0 };
+    result.push({ date, positive: values.pos, neutral: values.neu, negative: values.neg });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return result;
+}
 
 function KecPieSection({ kecProps, cc }: { kecProps: KecProp[]; cc: typeof C }) {
   const allNames = kecProps.map(k => k.name).sort((a, b) => a.localeCompare(b));
@@ -133,7 +165,13 @@ export default function SentimentPage() {
 
   const [overview, setOverview] = useState<any[]>([]);
   const [byKec, setByKec] = useState<any[]>([]);
-  const [monthly, setMonthly] = useState<any[]>([]);
+  const [dailyTrend, setDailyTrend] = useState<DailyTrend[]>([]);
+  const [trendFilterOpen, setTrendFilterOpen] = useState(false);
+  const [visibleTrends, setVisibleTrends] = useState<Record<TrendKey, boolean>>({
+    positive: true,
+    neutral: true,
+    negative: true,
+  });
   const [kecProps, setKecProps] = useState<any[]>([]);
   const [byCat, setByCat] = useState<any[]>([]);
   const [catProps, setCatProps] = useState<any[]>([]);
@@ -176,22 +214,17 @@ export default function SentimentPage() {
             .map(([name, v]) => ({ name, positive: v.pos, neutral: v.neu, negative: v.neg }))
         );
 
-        // Monthly trend (no dots)
-        const monthSent: Record<string, { pos: number; neu: number; neg: number }> = {};
+        // Daily trend, including zero-value days between the first and last article.
+        const dailySent: Record<string, { pos: number; neu: number; neg: number }> = {};
         all.filter((r: any) => r.published_date).forEach((r: any) => {
-          const m = r.published_date.slice(0, 7);
-          monthSent[m] = monthSent[m] || { pos: 0, neu: 0, neg: 0 };
+          const date = r.published_date.slice(0, 10);
+          dailySent[date] = dailySent[date] || { pos: 0, neu: 0, neg: 0 };
           const s = r.sentiment || "unknown";
-          if (s === "positive") monthSent[m].pos++;
-          else if (s === "neutral") monthSent[m].neu++;
-          else if (s === "negative") monthSent[m].neg++;
+          if (s === "positive") dailySent[date].pos++;
+          else if (s === "neutral") dailySent[date].neu++;
+          else if (s === "negative") dailySent[date].neg++;
         });
-        setMonthly(
-          Object.entries(monthSent).sort(([a], [b]) => a.localeCompare(b)).map(([month, v]) => ({
-            month,
-            positive: v.pos, neutral: v.neu, negative: v.neg,
-          }))
-        );
+        setDailyTrend(fillDailyTrend(dailySent));
 
         // Proporsi per Kecamatan (sort by positive % desc)
         setKecProps(
@@ -254,6 +287,13 @@ export default function SentimentPage() {
   );
 
   const COL: Record<string, string> = { positive: cc.c2, neutral: cc.c6, negative: cc.c5 };
+  const toggleTrend = (key: TrendKey) => {
+    setVisibleTrends((current) => {
+      const activeCount = Object.values(current).filter(Boolean).length;
+      if (current[key] && activeCount === 1) return current;
+      return { ...current, [key]: !current[key] };
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -343,22 +383,50 @@ export default function SentimentPage() {
 
       {/* Tren Sentimen — Full Width Bottom */}
       <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Tren Sentimen</h3>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Tren Sentimen Harian</h3>
+          <div className="relative">
+            <button
+              onClick={() => setTrendFilterOpen((open) => !open)}
+              className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs"
+              style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+            >
+              Filter sentimen
+              <ChevronDown size={14} className={trendFilterOpen ? "rotate-180 transition-transform" : "transition-transform"} />
+            </button>
+            {trendFilterOpen && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-40 rounded-lg border p-2 shadow-lg" style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
+                {TREND_OPTIONS.map((option) => (
+                  <label key={option.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+                    <input
+                      type="checkbox"
+                      checked={visibleTrends[option.key]}
+                      onChange={() => toggleTrend(option.key)}
+                      className="accent-current"
+                      style={{ color: COL[option.key] }}
+                    />
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: COL[option.key] }} />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={400}>
-          <AreaChart data={monthly}>
-            <defs>
-              <linearGradient id="posGradM" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={cc.c2} stopOpacity={0.3} /><stop offset="95%" stopColor={cc.c2} stopOpacity={0} /></linearGradient>
-              <linearGradient id="negGradM" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={cc.c5} stopOpacity={0.3} /><stop offset="95%" stopColor={cc.c5} stopOpacity={0} /></linearGradient>
-            </defs>
+          <LineChart data={dailyTrend} margin={{ top: 8, right: 12, left: -8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} />
-            <XAxis dataKey="month" tick={{ fontSize: 9, fill: cc.tm }} />
+            <XAxis dataKey="date" tick={{ fontSize: 9, fill: cc.tm }} minTickGap={48} tickFormatter={(date) => date.slice(5)} />
             <YAxis tick={{ fontSize: 10, fill: cc.tm }} />
-            <Tooltip contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
-            <Brush dataKey="month" height={30} stroke={cc.ts} fill={cc.bg} />
-            <Area type="monotone" dataKey="positive" stroke={cc.c2} fill="url(#posGradM)" strokeWidth={2} dot={false} />
-            <Area type="monotone" dataKey="neutral" stroke={cc.c6} fill="none" strokeWidth={2} dot={false} />
-            <Area type="monotone" dataKey="negative" stroke={cc.c5} fill="url(#negGradM)" strokeWidth={2} dot={false} />
-          </AreaChart>
+            <Tooltip
+              labelFormatter={(date) => `Tanggal ${date}`}
+              contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }}
+            />
+            <Brush dataKey="date" height={30} stroke={cc.ts} fill={cc.bg} tickFormatter={(date) => date.slice(5)} />
+            {visibleTrends.positive && <Line type="linear" dataKey="positive" name="Positif" stroke={cc.c2} strokeWidth={2} dot={false} activeDot={false} />}
+            {visibleTrends.neutral && <Line type="linear" dataKey="neutral" name="Netral" stroke={cc.c6} strokeWidth={2} dot={false} activeDot={false} />}
+            {visibleTrends.negative && <Line type="linear" dataKey="negative" name="Negatif" stroke={cc.c5} strokeWidth={2} dot={false} activeDot={false} />}
+          </LineChart>
         </ResponsiveContainer>
       </div>
     </div>
