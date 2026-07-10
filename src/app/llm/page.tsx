@@ -313,7 +313,7 @@ export default function LLMPage() {
         </div>
         {isAdmin ? (
           <>
-            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Mode admin aktif dengan DeepSeek V4 Pro.</p>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Mode admin aktif dengan DeepSeek V4 Flash.</p>
             <button onClick={handleAdminLogout} disabled={authLoading} className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50" style={{ backgroundColor: "var(--accent)" }}><LogOut size={16} />Keluar mode admin</button>
           </>
         ) : (
@@ -344,7 +344,7 @@ export default function LLMPage() {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>AI Assistant Chatbot</h2>
-          {isAdmin && <p className="mt-1 text-xs font-medium" style={{ color: "var(--accent)" }}>Mode admin: DeepSeek V4 Pro</p>}
+          {isAdmin && <p className="mt-1 text-xs font-medium" style={{ color: "var(--accent)" }}>Mode admin: DeepSeek V4 Flash</p>}
         </div>
       </div>
 

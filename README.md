@@ -8,7 +8,7 @@ Dashboard dan LLM assistant untuk eksplorasi berita daerah Kabupaten Malang.
 - Peta kecamatan Kabupaten Malang berbasis GeoJSON.
 - LLM chat dengan routing otomatis untuk chat biasa, RAG, dan SQL.
 - Guest memakai Groq `llama-3.1-8b-instant` dari key pool database tanpa input API key.
-- Admin memakai DeepSeek `deepseek-v4-pro`, RAG top 20, dan konteks 10 percakapan terakhir.
+- Admin memakai DeepSeek `deepseek-v4-flash`, RAG top 20, dan konteks 10 percakapan terakhir.
 
 ## Struktur
 

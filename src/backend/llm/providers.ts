@@ -16,7 +16,7 @@ export type LLMCallConfig = {
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant';
 const DEEPSEEK_API = 'https://api.deepseek.com/chat/completions';
-const DEEPSEEK_MODEL = 'deepseek-v4-pro';
+const DEEPSEEK_MODEL = 'deepseek-v4-flash';
 
 type OpenAICompatibleResponse = {
   choices?: Array<{ message?: { content?: string | null } }>;
