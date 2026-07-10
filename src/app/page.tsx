@@ -197,8 +197,11 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
           <div className="relative h-full flex flex-col justify-end p-8">
             <span className="text-green-100/85 text-xs font-semibold uppercase tracking-widest mb-2">{hero.source}</span>
             <a href={hero.url} target="_blank" rel="noopener noreferrer"
-              className="text-white text-2xl font-bold leading-tight hover:underline flex items-start gap-3 max-w-3xl">
-              {hero.title}<ExternalLink size={18} className="flex-shrink-0 mt-1 opacity-50" />
+              className="text-white text-lg md:text-2xl font-bold leading-tight hover:underline flex items-start gap-3 max-w-3xl">
+              <span className="line-clamp-2">
+                {hero.title.length > 80 ? hero.title.slice(0, 80) + "…" : hero.title}
+              </span>
+              <ExternalLink size={18} className="flex-shrink-0 mt-1 opacity-50" />
             </a>
             <p className="text-white/50 text-xs mt-2">{hero.published_date}</p>
           </div>
@@ -291,22 +294,60 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
           <FileText size={16} />10 Berita Terbaru
         </h3>
-        <div className="overflow-x-auto">
+
+        {/* Mobile: card list */}
+        <div className="flex flex-col gap-2 sm:hidden">
+          {latestNews.map((n: any, i: number) => (
+            <div key={i} className="rounded-xl px-3 py-3" style={{ border: "1px solid var(--border)", backgroundColor: "var(--bg-primary)" }}>
+              <a href={n.url} target="_blank" rel="noopener noreferrer"
+                className="text-sm font-medium leading-snug hover:underline block mb-2"
+                style={{ color: "var(--text-primary)" }}>
+                {n.title}
+              </a>
+              {n.content_clean && (
+                <p className="text-[11px] line-clamp-2 mb-2" style={{ color: "var(--text-muted)" }}>
+                  {(n.content_clean).slice(0, 120)}
+                </p>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                  n.sentiment === "positive" ? "bg-emerald-200 text-emerald-900" :
+                  n.sentiment === "negative" ? "bg-red-200 text-red-900" :
+                  "bg-yellow-200 text-yellow-900"
+                }`}>{n.sentiment || "—"}</span>
+                {n.category && CAT_COLORS[n.category] && (
+                  <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${CAT_COLORS[n.category]}`}>
+                    {CAT_ICONS[n.category] || ""} {n.category}
+                  </span>
+                )}
+                <span className="text-[10px] ml-auto" style={{ color: "var(--text-muted)" }}>
+                  {n.source}
+                </span>
+                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  {n.published_date?.slice(0, 10)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* sm+: tabel */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-xs" style={{ color: "var(--text-secondary)" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
                 <th className="text-left py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Judul</th>
                 <th className="text-left py-2 px-2 font-semibold hidden md:table-cell" style={{ color: "var(--text-muted)" }}>Isi</th>
-                <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Sumber</th>
-                <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Kategori</th>
+                <th className="text-left py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Sumber</th>
+                <th className="text-left py-2 px-2 font-semibold hidden md:table-cell" style={{ color: "var(--text-muted)" }}>Kategori</th>
                 <th className="text-center py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Sentimen</th>
-                <th className="text-right py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Tanggal</th>
+                <th className="text-right py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Tanggal</th>
               </tr>
             </thead>
             <tbody>
               {latestNews.map((n: any, i: number) => (
                 <tr key={i} style={{ borderBottom: "1px solid var(--border)" }} className="hover:bg-black/5 transition-colors">
-                  <td className="py-2 px-2 max-w-[180px]">
+                  <td className="py-2 px-2 max-w-[200px]">
                     <a href={n.url} target="_blank" rel="noopener noreferrer"
                       className="font-medium hover:underline line-clamp-2 block"
                       style={{ color: "var(--text-primary)" }}>{n.title}</a>
@@ -314,8 +355,8 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                   <td className="py-2 px-2 text-[10px] hidden md:table-cell max-w-[180px]" style={{ color: "var(--text-muted)" }}>
                     <span className="line-clamp-2">{(n.content_clean || "").slice(0, 120)}</span>
                   </td>
-                  <td className="py-2 px-2 text-[10px] hidden sm:table-cell">{n.source}</td>
-                  <td className="py-2 px-2 hidden sm:table-cell">
+                  <td className="py-2 px-2 text-[10px]">{n.source}</td>
+                  <td className="py-2 px-2 hidden md:table-cell">
                     {n.category && CAT_COLORS[n.category] ? (
                       <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${CAT_COLORS[n.category]}`}>
                         {CAT_ICONS[n.category] || ""} {n.category}
@@ -331,7 +372,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                       "bg-yellow-200 text-yellow-900"
                     }`}>{n.sentiment || "—"}</span>
                   </td>
-                  <td className="py-2 px-2 text-right text-[10px] hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>
+                  <td className="py-2 px-2 text-right text-[10px]" style={{ color: "var(--text-muted)" }}>
                     {n.published_date?.slice(0, 10)}
                   </td>
                 </tr>

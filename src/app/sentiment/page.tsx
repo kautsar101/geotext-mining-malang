@@ -84,7 +84,7 @@ function KecPieSection({ kecProps, cc }: { kecProps: KecProp[]; cc: typeof C }) 
 
       {data ? (
         <div className="flex flex-col items-center gap-4">
-          {/* Pie chart — lebih besar karena hanya satu */}
+          {/* Pie chart — donut style sesuai dashboard */}
           <KecSinglePieLarge data={data} cc={cc} />
 
           {/* Ringkasan jumlah berita */}
@@ -118,39 +118,35 @@ function KecSinglePieLarge({ data, cc }: { data: KecProp; cc: typeof C }) {
     { name: "Negatif",  value: data.negative,  count: data.negCount, fill: cc.c5 },
   ].filter(d => d.value > 0);
 
-  const RADIAN = Math.PI / 180;
-  const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }: any) => {
-    if (value < 5) return null;
-    const r = innerRadius + (outerRadius - innerRadius) * 0.55;
-    const x = cx + r * Math.cos(-midAngle * RADIAN);
-    const y = cy + r * Math.sin(-midAngle * RADIAN);
-    return (
-      <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700}>
-        {value}%
-      </text>
-    );
-  };
+  const total = data.pCount + data.nCount + data.negCount;
 
   return (
-    <div className="flex flex-col items-center">
-      <PieChart width={260} height={260}>
-        <Pie data={pieData} cx={125} cy={125} outerRadius={115} dataKey="value" labelLine={false} label={renderLabel}>
+    <ResponsiveContainer width="100%" height={280}>
+      <PieChart>
+        <Pie
+          data={pieData}
+          cx="50%" cy="50%"
+          innerRadius={70} outerRadius={110}
+          paddingAngle={4}
+          dataKey="value"
+        >
           {pieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
         </Pie>
+        <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
+          <tspan x="50%" dy="-0.4em" fontSize={22} fontWeight={700} fill={cc.ts}>
+            {total.toLocaleString()}
+          </tspan>
+          <tspan x="50%" dy="1.4em" fontSize={11} fill={cc.tm}>Total</tspan>
+        </text>
         <Tooltip
-          formatter={(value: any, name: any, props: any) => [`${value}% (${props.payload.count} berita)`, name]}
-          contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 11 }}
+          formatter={(v: any, name: any, props: any) => [
+            `${props.payload.count.toLocaleString()} berita (${v}%)`, name
+          ] as [string, string]}
+          contentStyle={{ backgroundColor: "var(--bg-card)", border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }}
         />
+        <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 12 }}>{v}</span>} />
       </PieChart>
-      <div className="flex gap-4 mt-1">
-        {pieData.map(d => (
-          <span key={d.name} className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
-            <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: d.fill }} />
-            {d.name}
-          </span>
-        ))}
-      </div>
-    </div>
+    </ResponsiveContainer>
   );
 }
 
