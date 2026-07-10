@@ -4,6 +4,8 @@ export const dynamic = "force-dynamic";
 import { useEffect, useState, useCallback } from "react";
 import { Search, ExternalLink, ChevronLeft, ChevronRight, X, ArrowUpDown, ArrowUp, ArrowDown, Calendar } from "lucide-react";
 import AnimatedNumber from "@/frontend/components/AnimatedNumber";
+import KecamatanShapeIcon from "@/frontend/components/KecamatanShapeIcon";
+import { CategoryBadge, SentimentBadge } from "@/frontend/components/NewsBadges";
 
 const API = "/api/db?table=clean_news_articles";
 
@@ -115,15 +117,6 @@ export default function NewsPage() {
     }
   };
 
-  const sentColors: Record<string, string> = {
-    positive: "text-emerald-600 bg-emerald-50", negative: "text-rose-600 bg-rose-50", neutral: "text-amber-600 bg-amber-50",
-  };
-  const catColors: Record<string, string> = {
-    ekonomi: "text-blue-600 bg-blue-50", sosial: "text-purple-600 bg-purple-50",
-    kesehatan: "text-green-600 bg-green-50", pendidikan: "text-indigo-600 bg-indigo-50",
-  };
-  const catIcons: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kesehatan: "🏥", pendidikan: "📚" };
-
   return (
     <div className="space-y-4">
       <div className="sticky top-[-5rem] z-[1000] -mx-4 pb-4 pl-20 pr-4 pt-1 lg:top-[-2rem] lg:-mx-8 lg:px-8"
@@ -216,19 +209,9 @@ export default function NewsPage() {
                     onClick={() => setDetail(a)}>
                     <td className="p-3 font-medium truncate" style={{ color: "var(--text-primary)" }} title={a.title}>{a.title}</td>
                     <td className="p-3" style={{ color: "var(--text-secondary)" }}>{a.source}</td>
-                    <td className="p-3">
-                      {a.category && catColors[a.category] ? (
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${catColors[a.category]}`}>
-                          {catIcons[a.category] || ""} {a.category}
-                        </span>
-                      ) : <span className="text-xs" style={{ color: "var(--text-muted)" }}>-</span>}
-                    </td>
-                    <td className="p-3">
-                      {a.sentiment ? (
-                        <span className={`px-2 py-0.5 rounded-full text-xs ${sentColors[a.sentiment] || ""}`}>{a.sentiment}</span>
-                      ) : "-"}
-                    </td>
-                    <td className="p-3 hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{a.primary_kecamatan || "-"}</td>
+                    <td className="p-3"><CategoryBadge category={a.category} /></td>
+                    <td className="p-3"><SentimentBadge sentiment={a.sentiment} /></td>
+                    <td className="hidden p-3 md:table-cell"><span className="flex items-center gap-2" style={{ color: "var(--text-secondary)" }}><KecamatanShapeIcon name={a.primary_kecamatan} />{a.primary_kecamatan || "-"}</span></td>
                     <td className="p-3 text-xs" style={{ color: "var(--text-muted)" }}>{a.published_date}</td>
                     <td className="p-3">
                       <a href={a.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}

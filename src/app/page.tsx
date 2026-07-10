@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import AnimatedNumber from "@/frontend/components/AnimatedNumber";
 import ViewportChart from "@/frontend/components/ViewportChart";
+import KecamatanShapeIcon from "@/frontend/components/KecamatanShapeIcon";
+import { CategoryBadge, SentimentBadge } from "@/frontend/components/NewsBadges";
 
 const API = "/api/db?table=clean_news_articles";
 function fetcher(params: string) {
@@ -46,6 +48,55 @@ function fmtDateFull(d: string) {
   return `${String(date.getDate()).padStart(2,'0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+type LatestNewsItem = {
+  title?: string;
+  url?: string;
+  content_clean?: string;
+  source?: string;
+  category?: string;
+  sentiment?: string;
+  published_date?: string;
+  primary_kecamatan?: string;
+};
+
+function LatestNewsTable({ news }: { news: LatestNewsItem[] }) {
+  return (
+    <div className="rounded-2xl border p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
+      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+        <FileText size={16} />10 Berita Terbaru
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs" style={{ color: "var(--text-secondary)" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid var(--border)" }}>
+              <th className="px-2 py-2 text-left font-semibold" style={{ color: "var(--text-muted)" }}>Judul</th>
+              <th className="hidden px-2 py-2 text-left font-semibold md:table-cell" style={{ color: "var(--text-muted)" }}>Isi</th>
+              <th className="hidden px-2 py-2 text-left font-semibold sm:table-cell" style={{ color: "var(--text-muted)" }}>Sumber</th>
+              <th className="hidden px-2 py-2 text-left font-semibold md:table-cell" style={{ color: "var(--text-muted)" }}>Kecamatan</th>
+              <th className="hidden px-2 py-2 text-left font-semibold sm:table-cell" style={{ color: "var(--text-muted)" }}>Kategori</th>
+              <th className="px-2 py-2 text-center font-semibold" style={{ color: "var(--text-muted)" }}>Sentimen</th>
+              <th className="hidden px-2 py-2 text-right font-semibold sm:table-cell" style={{ color: "var(--text-muted)" }}>Tanggal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {news.map((item, index) => (
+              <tr key={`${item.url || item.title}-${index}`} className="animate-fade-in border-b transition-colors hover:bg-black/5" style={{ borderColor: "var(--border)", animationDelay: `${index * 45}ms` }}>
+                <td className="max-w-[180px] px-2 py-2"><a href={item.url} target="_blank" rel="noopener noreferrer" className="block line-clamp-2 font-medium hover:underline" style={{ color: "var(--text-primary)" }}>{item.title}</a></td>
+                <td className="hidden max-w-[180px] px-2 py-2 text-[10px] md:table-cell" style={{ color: "var(--text-muted)" }}><span className="line-clamp-2">{(item.content_clean || "").slice(0, 120)}</span></td>
+                <td className="hidden px-2 py-2 text-[10px] sm:table-cell">{item.source}</td>
+                <td className="hidden px-2 py-2 md:table-cell"><span className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--text-secondary)" }}><KecamatanShapeIcon name={item.primary_kecamatan} />{item.primary_kecamatan || "-"}</span></td>
+                <td className="hidden px-2 py-2 sm:table-cell"><CategoryBadge category={item.category} /></td>
+                <td className="px-2 py-2 text-center"><SentimentBadge sentiment={item.sentiment} /></td>
+                <td className="hidden px-2 py-2 text-right text-[10px] sm:table-cell" style={{ color: "var(--text-muted)" }}>{item.published_date?.slice(0, 10)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -60,7 +111,7 @@ export default function Dashboard() {
   const [kecData, setKecData] = useState<any[]>([]);
   const [sentimentData, setSentimentData] = useState<any[]>([]);
   const [dailyData, setDailyData] = useState<any[]>([]);
-  const [latestNews, setLatestNews] = useState<any[]>([]);
+  const [latestNews, setLatestNews] = useState<LatestNewsItem[]>([]);
   const [sourceData, setSourceData] = useState<any[]>([]);
 
   const fetchAll = useCallback(async () => {
@@ -73,8 +124,8 @@ export default function Dashboard() {
       const total = countR.count || 0;
 
       const all = await fetcher("select=source%2Ccategory%2Cprimary_kecamatan%2Cpublished_date%2Csentiment");
-      const newsRaw = await fetcher("select=title%2Csource%2Ccategory%2Csentiment%2Cpublished_date%2Curl%2Ccontent_clean&order=published_date.desc&limit=10");
-      setLatestNews(newsRaw.filter((n: any) => n.title).slice(0, 10));
+      const newsRaw = await fetcher("select=title%2Csource%2Ccategory%2Csentiment%2Cprimary_kecamatan%2Cpublished_date%2Curl%2Ccontent_clean&order=published_date.desc&limit=10");
+      setLatestNews((newsRaw as LatestNewsItem[]).filter((item) => item.title).slice(0, 10));
 
       const catMap: Record<string, number> = {};
       const kecMap: Record<string, number> = {};
@@ -136,6 +187,12 @@ export default function Dashboard() {
   const pRatio = stats.posRatio || 0;
   const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 };
   const SENT_COLORS = [cc.c2, cc.c6, cc.c5];
+  const sentimentTotal = sentimentData.reduce((sum, item) => sum + item.value, 0);
+  const dashboardSentimentData = sentimentData.map((item, index) => ({
+    ...item,
+    color: SENT_COLORS[index % SENT_COLORS.length],
+    percent: sentimentTotal > 0 ? (item.value / sentimentTotal) * 100 : 0,
+  }));
   const SOURCE_COLORS = [cc.c2, cc.c3, cc.c4, cc.c5, cc.c6, cc.tm];
   const sourceTotal = sourceData.reduce((s, d) => s + d.value, 0);
   const sourceTop = sourceData.slice(0, 5);
@@ -153,12 +210,6 @@ export default function Dashboard() {
     color: SOURCE_COLORS[i % SOURCE_COLORS.length],
     percent: sourceTotal > 0 ? (d.value / sourceTotal) * 100 : 0,
   }));
-const CAT_COLORS: Record<string, string> = {
-  ekonomi: "text-blue-600 bg-blue-50", sosial: "text-purple-600 bg-purple-50",
-  kesehatan: "text-green-600 bg-green-50", pendidikan: "text-indigo-600 bg-indigo-50",
-};
-const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kesehatan: "🏥", pendidikan: "📚" };
-
   const lineChartId = "dailyTrendGrad";
 
   const CustomTooltip = ({ active, payload }: any) => {
@@ -249,30 +300,34 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen</h3>
-          <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={320}>
-            <PieChart>
-              <Pie data={sentimentData} cx="50%" cy="50%" innerRadius={75} outerRadius={115}
-                paddingAngle={4} dataKey="value" isAnimationActive={isVisible}
-                label={({ name, value, percent }: any) => `${name}: ${value.toLocaleString()} (${(percent * 100).toFixed(0)}%)`}
-                labelLine={{ stroke: cc.tm, strokeWidth: 0.5, strokeDasharray: "2 2" }}>
-                {sentimentData.map((_, i) => <Cell key={i} fill={SENT_COLORS[i % SENT_COLORS.length]} />)}
-              </Pie>
-              <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
-                <tspan x="50%" dy="-0.4em" fontSize={22} fontWeight={700} fill={cc.ts}>
-                  {sentimentData.reduce((s, d) => s + d.value, 0).toLocaleString()}
-                </tspan>
-                <tspan x="50%" dy="1.4em" fontSize={11} fill={cc.tm}>Total</tspan>
-              </text>
-              <Tooltip
-                formatter={(v: any, name: any) => {
-                  const total = sentimentData.reduce((s, d) => s + d.value, 0);
-                  const pct = total > 0 ? ((v / total) * 100).toFixed(1) : "0";
-                  return [`${v.toLocaleString()} artikel (${pct}%)`, name] as [string, string];
-                }}
-                contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-              <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 12 }}>{v}</span>} />
-            </PieChart>
-          </ResponsiveContainer>}</ViewportChart>
+          <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-[minmax(0,1fr)_170px]">
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={270}>
+              <PieChart>
+                <Pie data={dashboardSentimentData} cx="50%" cy="50%" innerRadius={62} outerRadius={110} paddingAngle={3} dataKey="value" isAnimationActive={isVisible}>
+                  {dashboardSentimentData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                </Pie>
+                <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
+                  <tspan x="50%" dy="-0.25em" fontSize={20} fontWeight={700} fill={cc.ts}>{sentimentTotal.toLocaleString()}</tspan>
+                  <tspan x="50%" dy="1.45em" fontSize={10} fill={cc.tm}>Total</tspan>
+                </text>
+                <Tooltip formatter={(value: any, name: any) => {
+                  const percent = sentimentTotal > 0 ? ((Number(value) / sentimentTotal) * 100).toFixed(1) : "0";
+                  return [`${Number(value).toLocaleString()} artikel (${percent}%)`, name] as [string, string];
+                }} contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>}</ViewportChart>
+            <div className="space-y-2.5">
+              {dashboardSentimentData.map((item) => (
+                <div key={item.name} className="rounded-lg px-3 py-2" style={{ backgroundColor: `${item.color}12` }}>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                    <span className="text-xs font-medium capitalize" style={{ color: "var(--text-primary)" }}>{item.name}</span>
+                  </div>
+                  <p className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{item.value.toLocaleString()} artikel · {item.percent.toFixed(1)}%</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Kategori Berita</h3>
@@ -286,61 +341,6 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
               <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={cc.primary} isAnimationActive={isVisible} />
             </BarChart>
           </ResponsiveContainer>}</ViewportChart>
-        </div>
-      </div>
-
-      {/* Table: 10 Berita Terbaru */}
-      <div style={cardStyle}>
-        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-          <FileText size={16} />10 Berita Terbaru
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs" style={{ color: "var(--text-secondary)" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                <th className="text-left py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Judul</th>
-                <th className="text-left py-2 px-2 font-semibold hidden md:table-cell" style={{ color: "var(--text-muted)" }}>Isi</th>
-                <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Sumber</th>
-                <th className="text-left py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Kategori</th>
-                <th className="text-center py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Sentimen</th>
-                <th className="text-right py-2 px-2 font-semibold hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>Tanggal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {latestNews.map((n: any, i: number) => (
-                <tr key={i} style={{ borderBottom: "1px solid var(--border)" }} className="hover:bg-black/5 transition-colors">
-                  <td className="py-2 px-2 max-w-[180px]">
-                    <a href={n.url} target="_blank" rel="noopener noreferrer"
-                      className="font-medium hover:underline line-clamp-2 block"
-                      style={{ color: "var(--text-primary)" }}>{n.title}</a>
-                  </td>
-                  <td className="py-2 px-2 text-[10px] hidden md:table-cell max-w-[180px]" style={{ color: "var(--text-muted)" }}>
-                    <span className="line-clamp-2">{(n.content_clean || "").slice(0, 120)}</span>
-                  </td>
-                  <td className="py-2 px-2 text-[10px] hidden sm:table-cell">{n.source}</td>
-                  <td className="py-2 px-2 hidden sm:table-cell">
-                    {n.category && CAT_COLORS[n.category] ? (
-                      <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${CAT_COLORS[n.category]}`}>
-                        {CAT_ICONS[n.category] || ""} {n.category}
-                      </span>
-                    ) : (
-                      <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>—</span>
-                    )}
-                  </td>
-                  <td className="py-2 px-2 text-center">
-                    <span className={`inline-block text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-                      n.sentiment === "positive" ? "bg-emerald-200 text-emerald-900" :
-                      n.sentiment === "negative" ? "bg-red-200 text-red-900" :
-                      "bg-yellow-200 text-yellow-900"
-                    }`}>{n.sentiment || "—"}</span>
-                  </td>
-                  <td className="py-2 px-2 text-right text-[10px] hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>
-                    {n.published_date?.slice(0, 10)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -451,9 +451,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                   {sourcePieData.map((d) => <Cell key={d.name} fill={d.color} />)}
                 </Pie>
                 <text x="50%" y="48%" textAnchor="middle" dominantBaseline="middle">
-                  <tspan x="50%" dy="0" fontSize={20} fontWeight={700} fill={cc.ts}>
-                    {sourceTotal.toLocaleString()}
-                  </tspan>
+                  <tspan x="50%" dy="0" fontSize={20} fontWeight={700} fill={cc.ts}>{sourceTotal.toLocaleString()}</tspan>
                   <tspan x="50%" dy="1.45em" fontSize={10} fill={cc.tm}>Total</tspan>
                 </text>
                 <Tooltip formatter={(v: unknown, name: unknown) => {
@@ -498,6 +496,8 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
           </div>
         </div>
       </div>
+
+      <LatestNewsTable news={latestNews} />
     </div>
   );
 }

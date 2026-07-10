@@ -5,6 +5,7 @@ import { useEffect, useState, useRef } from "react";
 import { X, MapIcon, TrendingUp, TrendingDown } from "lucide-react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, Brush } from "recharts";
 import ViewportChart from "@/frontend/components/ViewportChart";
+import KecamatanShapeIcon from "@/frontend/components/KecamatanShapeIcon";
 
 const API = "/api/db?table=clean_news_articles";
 const CATEGORY_LAYERS = ["sosial", "ekonomi", "pendidikan", "kesehatan"];
@@ -171,6 +172,66 @@ export default function MapPage() {
         return HEAT_COLORS[Math.min(idx === -1 ? HEAT_COLORS.length - 1 : idx, HEAT_COLORS.length - 1)];
       }
 
+      function getLabelPosition(feature: any, layer: any) {
+        const geometry = feature?.geometry;
+        const polygons = geometry?.type === "MultiPolygon"
+          ? geometry.coordinates
+          : geometry?.type === "Polygon"
+            ? [geometry.coordinates]
+            : [];
+        const ringArea = (ring: number[][]) => Math.abs(ring.reduce((area, point, index) => {
+          const next = ring[(index + 1) % ring.length];
+          return area + point[0] * next[1] - next[0] * point[1];
+        }, 0));
+        const ring = polygons
+          .map((polygon: number[][][]) => polygon?.[0])
+          .filter((candidate: number[][]) => Array.isArray(candidate) && candidate.length > 3)
+          .sort((a: number[][], b: number[][]) => ringArea(b) - ringArea(a))[0];
+        if (!ring) return layer.getBounds().getCenter();
+
+        const containsPoint = (x: number, y: number) => {
+          let inside = false;
+          for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
+            const [xi, yi] = ring[index];
+            const [xj, yj] = ring[previous];
+            if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+          }
+          return inside;
+        };
+        const distanceToBorder = (x: number, y: number) => ring.reduce((nearest: number, point: number[], index: number) => {
+          const next = ring[(index + 1) % ring.length];
+          const dx = next[0] - point[0];
+          const dy = next[1] - point[1];
+          const lengthSquared = dx * dx + dy * dy;
+          const ratio = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((x - point[0]) * dx + (y - point[1]) * dy) / lengthSquared));
+          const distanceSquared = (x - (point[0] + ratio * dx)) ** 2 + (y - (point[1] + ratio * dy)) ** 2;
+          return Math.min(nearest, distanceSquared);
+        }, Infinity);
+
+        const longitudes = ring.map((point: number[]) => point[0]);
+        const latitudes = ring.map((point: number[]) => point[1]);
+        const minLongitude = Math.min(...longitudes); const maxLongitude = Math.max(...longitudes);
+        const minLatitude = Math.min(...latitudes); const maxLatitude = Math.max(...latitudes);
+        let best: [number, number] | null = null;
+        let bestDistance = -1;
+
+        // Find an interior visual center rather than a geometric centroid.
+        for (let row = 0; row <= 32; row++) {
+          for (let column = 0; column <= 32; column++) {
+            const longitude = minLongitude + ((maxLongitude - minLongitude) * column) / 32;
+            const latitude = minLatitude + ((maxLatitude - minLatitude) * row) / 32;
+            if (!containsPoint(longitude, latitude)) continue;
+            const distance = distanceToBorder(longitude, latitude);
+            if (distance > bestDistance) {
+              bestDistance = distance;
+              best = [longitude, latitude];
+            }
+          }
+        }
+
+        return best ? L.latLng(best[1], best[0]) : layer.getBounds().getCenter();
+      }
+
       const geoLayer = L.geoJSON(geoData, {
         style: (feature: any) => {
           const name = feature.properties?.kecamatan || "";
@@ -185,11 +246,12 @@ export default function MapPage() {
         onEachFeature: (feature: any, layer: any) => {
           const name = feature.properties?.kecamatan || "";
           const layerInfo = getLayerInfo(name);
+          const labelPosition = getLabelPosition(feature, layer);
 
           const tooltip = L.tooltip({
             permanent: true, direction: "center", className: "kec-label", offset: [0, 0],
-          }).setContent(`<div style="font-size:9px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.6);color:${layerInfo.value > 0 ? '#fff' : isDark ? '#9CA3AF' : '#6B7280'};background:transparent;border:none;box-shadow:none;text-align:center;line-height:1.2">${name}<br/><span style="font-size:10px">${layerInfo.label}</span></div>`);
-          layer.bindTooltip(tooltip);
+          }).setLatLng(labelPosition).setContent(`<div style="font-size:9px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,0.6);color:${layerInfo.value > 0 ? '#fff' : isDark ? '#9CA3AF' : '#6B7280'};background:transparent;border:none;box-shadow:none;text-align:center;line-height:1.2">${name}<br/><span style="font-size:10px">${layerInfo.label}</span></div>`);
+          layer.bindTooltip(tooltip).openTooltip(labelPosition);
 
           layer.on("click", () => selectKecamatan(name));
           layer.on("mouseover", () => {
@@ -236,7 +298,12 @@ export default function MapPage() {
     return () => { if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; } };
   }, [loading, stats, activeLayer, kecCategoryStats]);
 
-  const sentColors = ["#4bb062", "#EAB308", "#E11D48", "#9C9590"];
+  const sentimentColors: Record<string, string> = {
+    positive: "#15803d",
+    neutral: "#eab308",
+    negative: "#dc2626",
+  };
+  const getSentimentColor = (sentiment: string) => sentimentColors[sentiment.toLowerCase()] || "#9C9590";
 
   return (
     <div className="space-y-4">
@@ -244,22 +311,6 @@ export default function MapPage() {
         style={{ background: "linear-gradient(to bottom, var(--bg-primary) 0%, color-mix(in srgb, var(--bg-primary) 98%, transparent) 38%, color-mix(in srgb, var(--bg-primary) 90%, transparent) 60%, color-mix(in srgb, var(--bg-primary) 66%, transparent) 82%, transparent 100%)" }}>
         <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>Peta Spasial</h2>
         <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Klik kecamatan untuk melihat detail berita dan analisis sentimen</p>
-      </div>
-
-      <div className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <div>
-            <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Layer Peta</h3>
-            <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
-              Aktif: {getLayerTitle()}
-            </p>
-          </div>
-          <div className="hidden sm:flex items-center gap-1">
-            {HEAT_COLORS.map((color, i) => (
-              <span key={i} className="h-2.5 w-6 first:rounded-l-full last:rounded-r-full" style={{ backgroundColor: color }} />
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="rounded-xl p-3 shadow-sm" style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }}>
@@ -325,7 +376,7 @@ export default function MapPage() {
               <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={120}>
                 <PieChart>
                   <Pie data={kecSentiment} cx="50%" cy="50%" innerRadius={25} outerRadius={48} paddingAngle={3} dataKey="value" isAnimationActive={isVisible}>
-                    {kecSentiment.map((_, i) => <Cell key={i} fill={sentColors[i % sentColors.length]} />)}
+                    {kecSentiment.map((sentiment: any, i: number) => <Cell key={i} fill={getSentimentColor(sentiment.name)} />)}
                   </Pie>
                   <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 10, padding: 6 }}
                     formatter={(v: any) => [v, "Artikel"] as [string, string]} />
@@ -334,7 +385,7 @@ export default function MapPage() {
               <div className="flex gap-2 justify-center text-[10px] mt-1">
                 {kecSentiment.map((s: any, i: number) => (
                   <span key={i} style={{ color: "var(--text-muted)" }}>
-                    <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: sentColors[i] }} />
+                    <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: getSentimentColor(s.name) }} />
                     {s.name}: {s.value}
                   </span>
                 ))}
@@ -402,8 +453,12 @@ export default function MapPage() {
               <button key={i} onClick={() => selectKecamatan(s.name)}
                 className={`flex items-center justify-between px-3 py-1.5 rounded-lg transition-all text-left ${selectedKec === s.name ? "ring-2 ring-[var(--accent)]" : ""}`}
                 style={{ backgroundColor: "var(--bg-primary)" }}>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>{s.name}</span>
+                <div className="flex min-w-0 items-start gap-2">
+                  <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center" style={{ color: "var(--text-secondary)" }}>
+                    <KecamatanShapeIcon name={s.name} />
+                  </span>
+                  <div className="flex min-w-0 flex-col">
+                    <span className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>{s.name}</span>
                   <span className={`flex items-center gap-0.5 text-[10px] font-medium ${s.delta > 0 ? "text-emerald-600" : s.delta < 0 ? "text-red-600" : "text-gray-400"}`}>
                     {s.delta > 0 ? <TrendingUp size={10} /> : s.delta < 0 ? <TrendingDown size={10} /> : null}
                     <span className="text-[8px] opacity-60">7d</span>
@@ -412,6 +467,7 @@ export default function MapPage() {
                   {activeLayer !== "count" && (
                     <span className="text-[9px] truncate" style={{ color: "var(--text-muted)" }}>{layerInfo.detail}</span>
                   )}
+                  </div>
                 </div>
                 <span className="text-xs font-semibold flex-shrink-0 ml-2" style={{ color: "var(--accent)" }}>{layerInfo.label}</span>
               </button>
