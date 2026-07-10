@@ -128,6 +128,8 @@ Aturan wajib:
 7. Jangan gunakan STRING_AGG atau fungsi selain COUNT.
 8. Balas HANYA SQL satu baris.
 9. Dilarang memberi penjelasan, markdown, teks pembuka, atau teks penutup.
+10. Untuk SELECT (bukan COUNT/GROUP BY), selalu ambil id, title, url, content_clean, source.
+11. Jangan hanya ambil title doang — butuh id, url, dan content_clean juga.
 
 Contoh:
 User: "ada berapa berita positif di Kepanjen?"
@@ -135,6 +137,9 @@ SQL: SELECT COUNT(*) FROM clean_news_articles WHERE LOWER(sentiment)='positive' 
 
 User: "total berita per kategori"
 SQL: SELECT category, COUNT(*) as total FROM clean_news_articles GROUP BY category ORDER BY total DESC
+
+User: "tampilkan berita tentang pendidikan"
+SQL: SELECT id, title, url, content_clean, source FROM clean_news_articles WHERE LOWER(category)='pendidikan'
 
 User: "${safeQuery}"
 SQL:`;

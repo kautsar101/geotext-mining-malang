@@ -249,6 +249,13 @@ export async function handleLLMRequest(
           content: String(row.content_clean ?? row.snippet ?? ''),
         })),
       };
+      // ponytail: override sources with SQL data so citation [N] links match SQL results
+      sources = (sqlResult as Record<string, unknown>[]).map((row: Record<string, unknown>, i: number) => ({
+        id: i + 1,
+        title: String(row.title ?? ''),
+        url: String(row.url ?? ''),
+        source: String(row.source ?? ''),
+      }));
     } else if (sources.length > 0 && !searchInfo.includes('terbaru')) {
       tablePanel = {
         type: 'rag',
