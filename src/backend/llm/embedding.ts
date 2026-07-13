@@ -1,5 +1,3 @@
-import { pipeline } from '@huggingface/transformers';
-
 const EMBEDDING_MODEL = 'Xenova/multilingual-e5-large';
 const EMBEDDING_DIMENSIONS = 1024;
 
@@ -11,16 +9,22 @@ export type QueryEmbedding = {
   normalized: true;
 };
 
-type FeatureExtractor = Awaited<ReturnType<typeof pipeline<'feature-extraction'>>>;
+type FeatureExtractor = (
+  text: string,
+  options: { pooling: 'mean'; normalize: true },
+) => Promise<{ data: ArrayLike<number> }>;
 
 let extractorPromise: Promise<FeatureExtractor> | null = null;
 
 function getExtractor(): Promise<FeatureExtractor> {
   if (!extractorPromise) {
-    extractorPromise = pipeline('feature-extraction', EMBEDDING_MODEL, {
-      device: 'cpu',
-      dtype: 'q8',
-    });
+    // Load the native ONNX dependency only when RAG is actually requested.
+    extractorPromise = import('@huggingface/transformers').then(({ pipeline }) =>
+      pipeline('feature-extraction', EMBEDDING_MODEL, {
+        device: 'cpu',
+        dtype: 'q8',
+      }) as unknown as Promise<FeatureExtractor>,
+    );
   }
 
   return extractorPromise;
