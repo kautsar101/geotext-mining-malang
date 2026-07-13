@@ -25,6 +25,7 @@ function getExtractor(): Promise<FeatureExtractor> {
       return pipeline('feature-extraction', EMBEDDING_MODEL, {
         device: 'cpu',
         dtype: 'q8',
+        cache_dir: '/tmp/transformers-cache',
       }) as unknown as Promise<FeatureExtractor>;
     });
   }
