@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Geist, Geist_Mono } from "next/font/google";
 import Image from "next/image";
-import { LayoutGrid, Map, BarChart3, Newspaper, ChevronLeft, ChevronRight, Menu, MessageSquare, Moon, Sun, UserRound, X } from "lucide-react";
+import { LayoutGrid, Map, BarChart3, Newspaper, ChevronLeft, ChevronRight, Menu, MessageSquare, Moon, Sun, X } from "lucide-react";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -46,10 +46,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     setDark(next);
     document.documentElement.classList.toggle("dark");
     localStorage.setItem("theme", next ? "dark" : "light");
-  };
-
-  const openAdminLogin = () => {
-    window.dispatchEvent(new Event("open-llm-admin-login"));
   };
 
   return (
@@ -95,14 +91,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               ))}
             </nav>
             <div className="p-3 border-t" style={{ borderColor: "var(--border)" }}>
-              {isLLMPage && (
-                <button onClick={openAdminLogin}
-                  className="mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all"
-                  style={{ color: "var(--text-secondary)" }}>
-                  <UserRound size={20} />
-                  {!collapsed && <span>Admin</span>}
-                </button>
-              )}
               <button onClick={toggleTheme}
                 className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-all text-sm font-medium"
                 style={{ color: "var(--text-secondary)" }}>
@@ -157,14 +145,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 ))}
               </nav>
               <div className="border-t p-4" style={{ borderColor: "var(--border)" }}>
-                {isLLMPage && (
-                  <button onClick={openAdminLogin}
-                    className="mb-2 flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium"
-                    style={{ color: "var(--text-secondary)", backgroundColor: "var(--bg-card)" }}>
-                    <UserRound size={20} />
-                    <span>Admin</span>
-                  </button>
-                )}
                 <button onClick={toggleTheme}
                   className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium"
                   style={{ color: "var(--text-secondary)", backgroundColor: "var(--bg-card)" }}>
