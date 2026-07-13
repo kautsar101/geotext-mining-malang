@@ -65,6 +65,7 @@ export async function recordExchange(input: {
   sqlGenerated?: string;
   sqlResult?: unknown;
   sources?: unknown;
+  embeddingDebug?: unknown;
   latencyMs: number;
   error?: string;
 }) {
@@ -78,6 +79,7 @@ export async function recordExchange(input: {
       sql_generated: input.sqlGenerated,
       sql_result: input.sqlResult,
       sources: input.sources,
+      embedding_debug: input.embeddingDebug,
       latency_ms: input.latencyMs,
       error: input.error,
     });

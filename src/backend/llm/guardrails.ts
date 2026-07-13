@@ -99,6 +99,10 @@ const FOLLOW_UP_KEYWORDS = [
   'kenapa',
   'bagaimana',
   'apa maksudnya',
+  'berkaitan',
+  'terkait',
+  'seputar',
+  'sebelumnya',
 ];
 
 const TYPO_NORMALIZATIONS: Array<[RegExp, string]> = [
@@ -172,9 +176,16 @@ function hasDomainKeyword(text: string): boolean {
   return hasContextualKeyword && hasDataContext;
 }
 
-function isFollowUp(query: string): boolean {
+export function isFollowUpQuery(query: string): boolean {
   const lowered = normalizeQueryText(query);
   return FOLLOW_UP_KEYWORDS.some((keyword) => lowered.includes(keyword));
+}
+
+export function isContextualFollowUp(query: string): boolean {
+  const lowered = normalizeQueryText(query);
+  const hasLinkingPhrase = ['berkaitan', 'terkait', 'seputar', 'sebelumnya', 'tersebut', 'yang sama']
+    .some((phrase) => lowered.includes(phrase));
+  return isFollowUpQuery(query) && (hasLinkingPhrase || !hasDomainKeyword(query));
 }
 
 export function isInProjectContext(query: string, recentMessages: ChatMessage[] = []): boolean {
@@ -186,25 +197,48 @@ export function isInProjectContext(query: string, recentMessages: ChatMessage[] 
     .map((message) => message.content)
     .join(' ');
 
-  return isFollowUp(query) && hasDomainKeyword(recentContext);
+  return isFollowUpQuery(query) && hasDomainKeyword(recentContext);
 }
 
 function stripMarkdownCitationLinks(text: string): string {
   return text
-    .replace(/\[\[\s*(\d+)\\?\s*\]\]\(https?:\/\/[^)]+\)/g, '[$1]')
-    .replace(/\[\s*(\d+)\\?\s*\]\(https?:\/\/[^)]+\)/g, '[$1]');
+    .replace(/\*{0,3}\s*\[\[\s*(\d+)\\?\s*\]\]\(https?:\/\/[^)]+\)\s*\*{0,3}/g, '[$1]')
+    .replace(/\*{0,3}\s*\[\s*(\d+)\\?\s*\]\(https?:\/\/[^)]+\)\s*\*{0,3}/g, '[$1]');
+}
+
+function moveStandaloneCitationsInline(text: string): string {
+  const lines = text.split('\n');
+  const citationOnly = /^\s*(?:(?:\*{1,3})?\s*\[\d+\]\s*)+(?:\*{1,3})?\s*$/;
+
+  for (let index = 0; index < lines.length; index++) {
+    const citation = lines[index].trim();
+    if (!citationOnly.test(citation)) continue;
+
+    let next = index + 1;
+    while (next < lines.length && !lines[next].trim()) next++;
+    let target = next < lines.length ? next : index - 1;
+    while (target >= 0 && !lines[target].trim()) target--;
+
+    if (target >= 0) {
+      lines[target] = `${lines[target].trimEnd()} ${citation.replace(/\*/g, '')}`;
+      lines[index] = '';
+    }
+  }
+
+  return lines.filter((line) => line.trim() || line === '').join('\n');
 }
 
 function stripManualReferences(text: string): string {
   const lines = text.split('\n');
-  const cutIndex = lines.findIndex((line) => {
+  const cutIndex = lines.findIndex((line, index) => {
     const cleaned = stripMarkdownCitationLinks(line).trim();
+    const isCitationOnly = /^(?:\*{1,3}\s*)?(?:\[\d+\]\s*)+(?:\*{1,3})?$/i.test(cleaned);
+    const followingLines = lines.slice(index + 1, index + 4).join(' ');
+
     return (
       /^\s*(referensi|daftar referensi|sumber berita|sumber)\s*:?\s*$/i.test(cleaned) ||
-      /^\[\d+\]\s*$/.test(cleaned) ||
       /^\[\d+\]\s*(judul|sumber)\s*:/i.test(cleaned) ||
-      /^\[\[\s*\d+\\?\s*\]\]\(https?:\/\/[^)]+\)\s*$/.test(line.trim()) ||
-      /^\[\s*\d+\\?\s*\]\(https?:\/\/[^)]+\)\s*$/.test(line.trim())
+      (isCitationOnly && /\b(judul|sumber)\s*:/i.test(followingLines))
     );
   });
 
@@ -230,7 +264,9 @@ function stripGenericClosings(text: string): string {
 
 export function cleanModelText(text: string, query = ''): string {
   const trimmed = stripGenericClosings(
-    stripUnrequestedTable(stripManualReferences(stripMarkdownCitationLinks(text)), query),
+    moveStandaloneCitationsInline(
+      stripUnrequestedTable(stripManualReferences(stripMarkdownCitationLinks(text)), query),
+    ),
   ).trim();
   if (!trimmed) {
     return 'Maaf, saya belum bisa membuat jawaban dari konteks yang tersedia.';

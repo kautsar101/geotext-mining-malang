@@ -1,6 +1,7 @@
 import {
   cleanModelText,
   isGreetingOnly,
+  isContextualFollowUp,
   isInProjectContext,
   normalizeQueryText,
   OUT_OF_CONTEXT_RESPONSE,
@@ -44,6 +45,19 @@ type TablePanel = {
   type: 'sql' | 'rag';
   rows: TablePanelRow[];
 };
+
+function buildContextualQuery(query: string, recentMessages: { role: string; content: string }[]): string {
+  if (!isContextualFollowUp(query)) return query;
+
+  const previousUserQueries = recentMessages
+    .filter((message) => message.role === 'user')
+    .slice(-2)
+    .map((message) => message.content.trim())
+    .filter(Boolean);
+
+  if (previousUserQueries.length === 0) return query;
+  return `${previousUserQueries.join(' ')}\nPertanyaan lanjutan: ${query}`;
+}
 
 const KECAMATAN_LABELS: Record<string, string> = {
   ampelgading: 'Ampelgading',
@@ -159,7 +173,7 @@ export async function handleLLMRequest(
   const t0 = Date.now();
   let queryForLog = '';
   let routeForLog = '';
-  const sessionId = fallbackSessionId;
+  let activeSessionId = fallbackSessionId;
   const mode = options.mode === 'admin' ? 'admin' : 'guest';
   const processSteps: LLMProcessStep[] = [];
 
@@ -171,7 +185,7 @@ export async function handleLLMRequest(
 
   try {
     const query = typeof body.query === 'string' ? sanitizeInput(body.query) : '';
-    const sid = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : sessionId;
+    const sid = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : fallbackSessionId;
     const includeDebug = body.debug === true;
     const callConfig: LLMCallConfig = { provider: mode === 'admin' ? 'deepseek' : 'groq' };
 
@@ -181,9 +195,14 @@ export async function handleLLMRequest(
       return { body: { error: 'Query diperlukan' }, status: 400 };
     }
 
+    activeSessionId = sid;
+    const memory = await getSessionMemory(sid, mode === 'admin' ? 10 : 5);
+    const recentMessages = memory.recentMessages;
+    const contextualQuery = buildContextualQuery(query, recentMessages);
+
     emitStep('understand', 'Memahami pertanyaan...');
 
-    if (!isInProjectContext(query)) {
+    if (!isInProjectContext(query, recentMessages)) {
       routeForLog = 'out_of_context';
       await recordExchange({
         sessionId: sid,
@@ -205,7 +224,7 @@ export async function handleLLMRequest(
 
     let intents: LLMIntent[] = ['chat'];
     if (!isGreetingOnly(query)) {
-      const routed = await classifyIntents(query);
+      const routed = await classifyIntents(contextualQuery);
       intents = routed.intents;
     }
 
@@ -232,10 +251,6 @@ export async function handleLLMRequest(
       };
     }
 
-    // Guest stays stateless; admin receives the ten latest user/assistant turns.
-    const memory = await getSessionMemory(sid, mode === 'admin' ? 10 : 0);
-    const recentMessages = memory.recentMessages;
-
     let sqlContext = '';
     let sqlGenerated = '';
     let sqlResult: unknown = null;
@@ -243,7 +258,7 @@ export async function handleLLMRequest(
 
     if (intents.includes('sql')) {
       emitStep('analyze_data', 'Menganalisis data...');
-      sqlGenerated = await generateSQL(query, callConfig);
+      sqlGenerated = await generateSQL(contextualQuery, callConfig);
       if (validateSQL(sqlGenerated)) {
         const result = await executeSQL(sqlGenerated);
         sqlResult = result.data;
@@ -258,19 +273,21 @@ export async function handleLLMRequest(
 
     let sources: Source[] = [];
     let searchInfo = '';
+    let embeddingDebug: unknown;
     // ponytail: inline type — only used here and in response body (Record<string,unknown>)
     let tablePanel: TablePanel | undefined;
 
     if (intents.includes('rag')) {
       emitStep('search_documents', 'Mencari konteks berita...');
-      const parsed = await parseRetrievalQuery(query);
-      const retrieval = await retrieveSources(query, {
+      const parsed = await parseRetrievalQuery(contextualQuery);
+      const retrieval = await retrieveSources(contextualQuery, {
         kecamatan: parsed.kecamatan,
         kategori: parsed.kategori,
         sentimen: parsed.sentimen,
-      }, mode === 'admin' ? 20 : 10);
+      }, mode === 'admin' ? 20 : 10, includeDebug);
       sources = retrieval.sources;
       searchInfo = retrieval.searchInfo;
+      embeddingDebug = retrieval.embeddingDebug;
     }
 
     // Map tablePanel dari SQL result (SELECT only) atau RAG sources
@@ -307,7 +324,7 @@ export async function handleLLMRequest(
     emitStep('compose_answer', 'Menyusun jawaban...');
 
     const directAnswer = sqlMeta === 'count' && !intents.includes('rag')
-      ? formatDirectCountAnswer(query, sqlResult)
+      ? formatDirectCountAnswer(contextualQuery, sqlResult)
       : null;
     if (directAnswer) {
       await recordExchange({
@@ -318,6 +335,7 @@ export async function handleLLMRequest(
         sqlGenerated,
         sqlResult,
         sources,
+        embeddingDebug,
         latencyMs: Date.now() - t0,
       });
 
@@ -336,6 +354,7 @@ export async function handleLLMRequest(
                   sqlResult,
                   searchInfo: searchInfo || null,
                   sourcesCount: sources.length,
+                  embeddingDebug: embeddingDebug || null,
                   latencyMs: Date.now() - t0,
                 },
               }
@@ -351,6 +370,7 @@ export async function handleLLMRequest(
       sqlContext,
       ragSources: sources,
       searchInfo,
+      memorySummary: memory.summary,
     });
 
     const answer = cleanModelText(await callLLM(finalMessages, mode === 'admin' ? 900 : 650, 0.3, callConfig), query);
@@ -379,6 +399,7 @@ export async function handleLLMRequest(
       sqlGenerated,
       sqlResult,
       sources,
+      embeddingDebug,
       latencyMs: Date.now() - t0,
     });
 
@@ -397,6 +418,7 @@ export async function handleLLMRequest(
                 sqlResult,
                 searchInfo: searchInfo || null,
                 sourcesCount: sources.length,
+                embeddingDebug: embeddingDebug || null,
                 latencyMs: Date.now() - t0,
               },
             }
@@ -407,7 +429,7 @@ export async function handleLLMRequest(
     const error = e instanceof Error ? e.message : 'Internal error';
     const friendlyError = toFriendlyLLMError(error);
     await recordExchange({
-      sessionId,
+      sessionId: activeSessionId,
       query: queryForLog,
       route: routeForLog,
       error,

@@ -8,17 +8,19 @@ export function buildFinalMessages(input: {
   sqlContext?: string;
   ragSources: Source[];
   searchInfo?: string;
+  memorySummary?: string;
 }): ChatMessage[] {
   const needsRag = input.intents.includes('rag');
   const sourceRules = needsRag
-    ? `- Jika memakai konteks berita, tulis citation polos [1], [2] di akhir kalimat yang memakai sumber.
+    ? `- Jika memakai konteks berita, tulis citation polos [1], [2] setelah tanda titik di akhir kalimat yang memakai sumber, bukan di baris baru.
 - Citation harus polos seperti [1], bukan markdown link seperti [[1]](url) atau [judul](url).
+- Jangan menulis URL mentah. Link sumber akan ditampilkan oleh aplikasi melalui citation.
 - Jangan membuat sumber, URL, judul, atau fakta berita palsu.
 - Jangan membuat section "Referensi" sendiri; citation [1] sudah cukup.
 - Jangan menulis daftar referensi, URL mentah, "Judul:", atau "Sumber:" di akhir jawaban.
 - Jangan mengulang sumber/citation sebagai daftar kedua setelah jawaban.
 - Jangan menyarankan Google, Detik, Radar Malang, Malang Pos, atau sumber eksternal lain jika sumber itu tidak ada di konteks berita.
-- Jika user meminta daftar berita, gunakan format bernomor ini: "1. **Judul berita** [1]" lalu ringkasan 1-2 kalimat dan metadata sumber/tanggal singkat. Jangan menulis "1." di baris terpisah.
+- Jika user meminta daftar berita, gunakan satu item yang utuh: "1. **Judul berita**. Ringkasan 1-2 kalimat. [1]". Citation harus berada di akhir ringkasan, bukan pada baris terpisah.
 - JANGAN PERNAH membuat tabel dalam jawaban. Semua data tabel akan ditampilkan di panel terpisah.
 - Jangan menutup jawaban dengan kalimat generik seperti "Data tersebut berdasarkan database..." atau "Jika membutuhkan informasi lebih lanjut...".
 - Jika konteks berita tidak relevan dengan topik/kecamatan yang diminta, katakan data tidak ditemukan di database dan jangan tampilkan artikel yang tidak relevan sebagai hasil.`
@@ -46,6 +48,8 @@ Data database:
 ${input.sqlContext || '-'}
 
 ${input.searchInfo || ''}
+Ringkasan konteks percakapan sebelumnya:
+${input.memorySummary || '-'}
 Konteks berita:
 ${needsRag ? formatSourcesForPrompt(input.ragSources) : '-'}`;
 

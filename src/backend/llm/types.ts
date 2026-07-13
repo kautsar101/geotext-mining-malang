@@ -17,6 +17,8 @@ export type LLMProcessStep = {
 
 export type Source = {
   id: number;
+  articleId?: number;
+  chunkIndices?: number[];
   title?: string;
   snippet?: string;
   source?: string;
