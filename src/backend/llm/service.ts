@@ -224,6 +224,7 @@ export async function handleLLMRequest(
 
     let intents: LLMIntent[] = ['chat'];
     if (!isGreetingOnly(query)) {
+      emitStep('classify_request', 'Menentukan informasi yang diperlukan...');
       const routed = await classifyIntents(contextualQuery);
       intents = routed.intents;
     }
@@ -257,12 +258,15 @@ export async function handleLLMRequest(
     let sqlMeta = '';
 
     if (intents.includes('sql')) {
-      emitStep('analyze_data', 'Menganalisis data...');
+      emitStep('analyze_data', 'Menentukan data yang perlu dihitung...');
       sqlGenerated = await generateSQL(contextualQuery, callConfig);
+      emitStep('validate_query', 'Memeriksa kebutuhan data...');
       if (validateSQL(sqlGenerated)) {
+        emitStep('query_database', 'Mengambil data dari database...');
         const result = await executeSQL(sqlGenerated);
         sqlResult = result.data;
         sqlMeta = result.meta;
+        emitStep('validate_data', 'Memeriksa hasil data...');
         sqlContext = result.data.length > 0
           ? `Data database (${result.meta}): ${JSON.stringify(result.data, null, 2)}`
           : `Data database (${result.meta}): []\nPeringatan: hasil database kosong. Jangan membuat angka statistik sendiri.`;
@@ -278,13 +282,14 @@ export async function handleLLMRequest(
     let tablePanel: TablePanel | undefined;
 
     if (intents.includes('rag')) {
-      emitStep('search_documents', 'Mencari konteks berita...');
+      emitStep('parse_query', 'Mengenali topik, lokasi, kategori, dan periode...');
       const parsed = await parseRetrievalQuery(contextualQuery);
+      emitStep('search_documents', 'Mencari berita yang sesuai...');
       const retrieval = await retrieveSources(contextualQuery, {
         kecamatan: parsed.kecamatan,
         kategori: parsed.kategori,
         sentimen: parsed.sentimen,
-      }, mode === 'admin' ? 20 : 10, includeDebug);
+      }, mode === 'admin' ? 20 : 10, includeDebug, emitStep);
       sources = retrieval.sources;
       searchInfo = retrieval.searchInfo;
       embeddingDebug = retrieval.embeddingDebug;
@@ -321,12 +326,17 @@ export async function handleLLMRequest(
       };
     }
 
+    if (intents.includes('sql') || intents.includes('rag')) {
+      emitStep('combine_context', 'Menggabungkan berita dan data yang ditemukan...');
+    }
+
     emitStep('compose_answer', 'Menyusun jawaban...');
 
     const directAnswer = sqlMeta === 'count' && !intents.includes('rag')
       ? formatDirectCountAnswer(contextualQuery, sqlResult)
       : null;
     if (directAnswer) {
+      emitStep('format_answer', 'Merapikan jawaban dan sumber...');
       await recordExchange({
         sessionId: sid,
         query,
@@ -373,7 +383,9 @@ export async function handleLLMRequest(
       memorySummary: memory.summary,
     });
 
-    const answer = cleanModelText(await callLLM(finalMessages, mode === 'admin' ? 1400 : 650, 0.3, callConfig), query);
+    const rawAnswer = await callLLM(finalMessages, mode === 'admin' ? 1400 : 650, 0.3, callConfig);
+    emitStep('format_answer', 'Merapikan jawaban dan sumber...');
+    const answer = cleanModelText(rawAnswer, query);
 
     if (tablePanel?.type === 'rag') {
       const citedSourceIds = getCitationOrder(answer);

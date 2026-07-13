@@ -18,12 +18,20 @@ type ChatMessage = {
   content: string;
   sources?: Source[];
   tableData?: { type: "sql" | "rag"; rows: { reference: number; title: string; url: string; content: string }[] };
+  processSteps?: ProcessStep[];
+};
+
+type ProcessStep = {
+  id: string;
+  label: string;
+  elapsedMs?: number;
 };
 
 type LLMResponsePayload = {
   response?: string;
   sources?: Source[];
   tablePanel?: { type: "sql" | "rag"; rows: { reference: number; title: string; url: string; content: string }[] };
+  processSteps?: ProcessStep[];
   error?: string;
 };
 
@@ -43,7 +51,7 @@ function parseSSEBlock(block: string): { event: string; data: unknown } | null {
   }
 }
 
-async function readLLMStream(response: Response, onProcess: (label: string) => void): Promise<LLMResponsePayload> {
+async function readLLMStream(response: Response, onProcess: (step: ProcessStep) => void): Promise<LLMResponsePayload> {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("text/event-stream") || !response.body) {
     return response.json() as Promise<LLMResponsePayload>;
@@ -65,8 +73,14 @@ async function readLLMStream(response: Response, onProcess: (label: string) => v
       buffer = buffer.slice(boundary + 2);
 
       if (parsed?.event === "step") {
-        const step = parsed.data as { label?: unknown };
-        if (typeof step.label === "string") onProcess(step.label);
+        const step = parsed.data as { id?: unknown; label?: unknown; elapsedMs?: unknown };
+        if (typeof step.id === "string" && typeof step.label === "string") {
+          onProcess({
+            id: step.id,
+            label: step.label,
+            elapsedMs: typeof step.elapsedMs === "number" ? step.elapsedMs : undefined,
+          });
+        }
       }
       if (parsed?.event === "result" || parsed?.event === "error") {
         finalPayload = parsed.data as LLMResponsePayload;
@@ -76,6 +90,23 @@ async function readLLMStream(response: Response, onProcess: (label: string) => v
   }
 
   return finalPayload || { error: "Respons stream kosong" };
+}
+
+function ProcessTimeline({ steps, active }: { steps: ProcessStep[]; active: boolean }) {
+  return (
+    <div className="relative space-y-2.5 py-1">
+      {steps.map((step, index) => {
+        const isCurrent = active && index === steps.length - 1;
+        return (
+          <div key={`${step.id}-${index}`} className="relative flex items-start gap-2.5 text-xs">
+            {index < steps.length - 1 && <span className="absolute left-[4px] top-3.5 h-[calc(100%+0.65rem)] w-px" style={{ backgroundColor: "var(--border)" }} />}
+            <span className={`relative z-10 mt-0.5 h-2.5 w-2.5 flex-shrink-0 rounded-full border ${isCurrent ? "animate-pulse" : ""}`} style={{ backgroundColor: isCurrent ? "var(--bg-card)" : "var(--accent)", borderColor: "var(--accent)" }} />
+            <span style={{ color: isCurrent ? "var(--text-primary)" : "var(--text-secondary)" }}>{step.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function createSessionId(mode: "guest" | "admin") {
@@ -114,9 +145,11 @@ function TypingAssistantContent({ text, sources }: { text: string; sources: Sour
       else setComplete(true);
     };
 
-    setVisibleLength(0);
-    setComplete(false);
-    frameId = requestAnimationFrame(typeNextChunk);
+    frameId = requestAnimationFrame(() => {
+      setVisibleLength(0);
+      setComplete(false);
+      typeNextChunk();
+    });
     return () => cancelAnimationFrame(frameId);
   }, [text]);
 
@@ -128,9 +161,10 @@ export default function LLMPage() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => initialMessages(false));
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [activeProcess, setActiveProcess] = useState("Mengirim pertanyaan...");
+  const [processSteps, setProcessSteps] = useState<ProcessStep[]>([]);
   const [chatFullscreen, setChatFullscreen] = useState(false);
   const [activeTableIndex, setActiveTableIndex] = useState<number | null>(null);
+  const [expandedProcessIndex, setExpandedProcessIndex] = useState<number | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [username, setUsername] = useState("");
@@ -145,6 +179,8 @@ export default function LLMPage() {
     sessionId.current = createSessionId(adminMode ? "admin" : "guest");
     setMessages(initialMessages(adminMode));
     setActiveTableIndex(null);
+    setProcessSteps([]);
+    setExpandedProcessIndex(null);
     setInput("");
   };
 
@@ -174,7 +210,7 @@ export default function LLMPage() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading, activeProcess]);
+  }, [messages, isLoading, processSteps]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -231,9 +267,11 @@ export default function LLMPage() {
     const assistantMessageIndex = messages.length + 1;
     const activeSessionId = sessionId.current || createSessionId(isAdmin ? "admin" : "guest");
     sessionId.current = activeSessionId;
+    let streamedSteps: ProcessStep[] = [];
     setInput("");
     setMessages((previous) => [...previous, { role: "user", content: userMessage }]);
-    setActiveProcess("Mengirim pertanyaan...");
+    setProcessSteps([]);
+    setExpandedProcessIndex(null);
     setIsLoading(true);
     setActiveTableIndex(null);
 
@@ -247,7 +285,10 @@ export default function LLMPage() {
 
       let data: LLMResponsePayload;
       try {
-        data = await readLLMStream(response, setActiveProcess);
+        data = await readLLMStream(response, (step) => {
+          streamedSteps = [...streamedSteps, step];
+          setProcessSteps((previous) => [...previous, step]);
+        });
       } catch {
         const fallback = await fetch("/api/llm", {
           method: "POST",
@@ -257,8 +298,10 @@ export default function LLMPage() {
         data = await fallback.json() as LLMResponsePayload;
       }
 
+      const completedSteps = data.processSteps?.length ? data.processSteps : streamedSteps;
+
       if (data.error) {
-        setMessages((previous) => [...previous, { role: "assistant", content: data.error || "Maaf, terjadi kendala saat memproses jawaban." }]);
+        setMessages((previous) => [...previous, { role: "assistant", content: data.error || "Maaf, terjadi kendala saat memproses jawaban.", processSteps: completedSteps }]);
       } else {
         if (data.tablePanel?.rows.length) setActiveTableIndex(assistantMessageIndex);
         setMessages((previous) => [...previous, {
@@ -266,12 +309,14 @@ export default function LLMPage() {
           content: data.response || "Maaf, respons kosong.",
           sources: data.sources || [],
           tableData: data.tablePanel,
+          processSteps: completedSteps,
         }]);
       }
     } catch {
       setMessages((previous) => [...previous, { role: "assistant", content: "Gagal terhubung ke server." }]);
     } finally {
       setIsLoading(false);
+      setProcessSteps([]);
     }
   };
 
@@ -297,6 +342,14 @@ export default function LLMPage() {
                 {message.role === "assistant"
                   ? <TypingAssistantContent text={message.content} sources={message.sources || []} />
                   : <InlineContent text={message.content} sources={message.sources || []} />}
+                {message.role === "assistant" && message.processSteps && message.processSteps.length > 0 && (
+                  <div className="mt-3 border-t pt-2" style={{ borderColor: "var(--border)" }}>
+                    <button onClick={() => setExpandedProcessIndex(expandedProcessIndex === index ? null : index)} className="text-[11px] font-medium transition-opacity hover:opacity-75" style={{ color: "var(--accent)" }} aria-expanded={expandedProcessIndex === index}>
+                      {expandedProcessIndex === index ? "Sembunyikan proses" : `Lihat proses (${message.processSteps.length} langkah)`}
+                    </button>
+                    {expandedProcessIndex === index && <div className="mt-2"><ProcessTimeline steps={message.processSteps} active={false} /></div>}
+                  </div>
+                )}
                 {message.role === "assistant" && message.tableData && message.tableData.rows.length > 0 && (
                   <button onClick={() => setActiveTableIndex(activeTableIndex === index ? null : index)} className="mt-2 rounded-lg px-3 py-1 text-xs transition-colors hover:opacity-80" style={{ backgroundColor: activeTableIndex === index ? "var(--accent)" : "color-mix(in srgb, var(--accent) 15%, transparent)", color: activeTableIndex === index ? "#fff" : "var(--accent)", border: "1px solid var(--accent)" }}>
                     {activeTableIndex === index ? "Sembunyikan Tabel" : `Lihat Tabel (${message.tableData.rows.length})`}
@@ -309,9 +362,10 @@ export default function LLMPage() {
 
         {isLoading && (
           <div className="flex animate-fade-in justify-start">
-            <div className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
-              <Loader2 size={15} className="animate-spin" style={{ color: "var(--accent)" }} />
-              <span>{activeProcess}</span>
+            <div className="min-w-[220px] rounded-xl px-4 py-3 text-sm" style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}>
+              {processSteps.length > 0
+                ? <ProcessTimeline steps={processSteps} active />
+                : <div className="flex items-center gap-2"><Loader2 size={15} className="animate-spin" style={{ color: "var(--accent)" }} /><span>Memulai pemrosesan pertanyaan...</span></div>}
             </div>
           </div>
         )}

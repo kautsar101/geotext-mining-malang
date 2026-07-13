@@ -7,7 +7,21 @@ export type ChatMessage = {
 
 export type LLMIntent = 'chat' | 'rag' | 'sql';
 
-export type LLMProcessStepId = 'understand' | 'search_documents' | 'analyze_data' | 'compose_answer';
+export type LLMProcessStepId =
+  | 'understand'
+  | 'classify_request'
+  | 'parse_query'
+  | 'search_documents'
+  | 'match_documents'
+  | 'fallback_search'
+  | 'select_documents'
+  | 'analyze_data'
+  | 'validate_query'
+  | 'query_database'
+  | 'validate_data'
+  | 'combine_context'
+  | 'compose_answer'
+  | 'format_answer';
 
 export type LLMProcessStep = {
   id: LLMProcessStepId;

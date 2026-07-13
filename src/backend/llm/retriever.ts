@@ -1,7 +1,7 @@
 import { supabase } from '@/backend/db/supabase';
 import { generateEmbedding } from './providers';
 import { normalizeQueryText, sanitizeInput } from './guardrails';
-import type { Source } from './types';
+import type { LLMProcessStepId, Source } from './types';
 
 const KECAMATAN = [
   'Ampelgading', 'Bantur', 'Bululawang', 'Dampit', 'Dau', 'Donomulyo', 'Gedangan',
@@ -15,7 +15,7 @@ const KECAMATAN = [
 const VALID_KATEGORI = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'];
 const VALID_SENTIMEN = ['positive', 'negative', 'neutral'];
 const RAG_TOP_K = 10;
-const EMBEDDING_TIMEOUT_MS = 25_000;
+const EMBEDDING_TIMEOUT_MS = 30_000;
 const KEYWORD_STOPWORDS = [
   'carikan', 'cari', 'berita', 'artikel', 'tentang', 'kabupaten', 'malang',
   'kecamatan', 'saya', 'tolong', 'yang', 'dan', 'atau', 'dengan', 'untuk',
@@ -134,6 +134,7 @@ export async function retrieveSources(
   filters: Pick<ParsedQuery, 'kecamatan' | 'kategori' | 'sentimen'>,
   topK = RAG_TOP_K,
   includeVector = false,
+  onProgress?: (id: LLMProcessStepId, label: string) => void,
 ): Promise<{ sources: Source[]; searchInfo: string; embeddingDebug: EmbeddingDebug }> {
   const allSources: RawSource[] = [];
   const searchSteps: string[] = [];
@@ -152,6 +153,7 @@ export async function retrieveSources(
   };
 
   try {
+    onProgress?.('match_documents', 'Membandingkan pertanyaan dengan isi berita...');
     // Jangan biarkan cold start model embedding memutus seluruh request LLM.
     const embedding = await withTimeout(generateEmbedding(queryText), EMBEDDING_TIMEOUT_MS);
     if (embedding) {
@@ -176,6 +178,7 @@ export async function retrieveSources(
     embeddingDebug.error = error instanceof Error
       ? `${error.message}; fallback ke keyword search`
       : 'Embedding search gagal; fallback ke keyword search';
+    onProgress?.('fallback_search', 'Menyesuaikan pencarian berdasarkan detail pertanyaan...');
   }
 
   const keywords = normalizeQueryText(queryText).split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8);
@@ -241,6 +244,8 @@ export async function retrieveSources(
   const rankedArticles = [...articleGroups.values()]
     .sort((a, b) => b.bestScore - a.bestScore)
     .slice(0, topK);
+
+  onProgress?.('select_documents', 'Memilih berita yang paling relevan...');
 
   const sources = rankedArticles.map((group, i) => {
     const rankedGroupChunks = group.chunks.sort((a, b) => b.score - a.score);
