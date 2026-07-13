@@ -15,6 +15,7 @@ const KECAMATAN = [
 const VALID_KATEGORI = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'];
 const VALID_SENTIMEN = ['positive', 'negative', 'neutral'];
 const RAG_TOP_K = 10;
+const EMBEDDING_TIMEOUT_MS = 8_000;
 const KEYWORD_STOPWORDS = [
   'carikan', 'cari', 'berita', 'artikel', 'tentang', 'kabupaten', 'malang',
   'kecamatan', 'saya', 'tolong', 'yang', 'dan', 'atau', 'dengan', 'untuk',
@@ -43,6 +44,25 @@ type RawSource = {
   url?: string;
   similarity?: number;
 };
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Embedding timeout setelah ${timeoutMs / 1000} detik`));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
 
 function canonicalKecamatan(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -132,7 +152,8 @@ export async function retrieveSources(
   };
 
   try {
-    const embedding = await generateEmbedding(queryText);
+    // Jangan biarkan cold start model embedding memutus seluruh request LLM.
+    const embedding = await withTimeout(generateEmbedding(queryText), EMBEDDING_TIMEOUT_MS);
     if (embedding) {
       const { data } = await supabase.rpc('match_news_embeddings', {
         query_embedding: embedding.vector,
@@ -152,7 +173,9 @@ export async function retrieveSources(
     }
   } catch (error) {
     embeddingDebug.status = 'error';
-    embeddingDebug.error = error instanceof Error ? error.message : 'Embedding search gagal';
+    embeddingDebug.error = error instanceof Error
+      ? `${error.message}; fallback ke keyword search`
+      : 'Embedding search gagal; fallback ke keyword search';
   }
 
   const keywords = normalizeQueryText(queryText).split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8);
