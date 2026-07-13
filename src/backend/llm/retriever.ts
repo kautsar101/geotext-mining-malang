@@ -15,7 +15,7 @@ const KECAMATAN = [
 const VALID_KATEGORI = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'];
 const VALID_SENTIMEN = ['positive', 'negative', 'neutral'];
 const RAG_TOP_K = 10;
-const EMBEDDING_TIMEOUT_MS = 8_000;
+const EMBEDDING_TIMEOUT_MS = 25_000;
 const KEYWORD_STOPWORDS = [
   'carikan', 'cari', 'berita', 'artikel', 'tentang', 'kabupaten', 'malang',
   'kecamatan', 'saya', 'tolong', 'yang', 'dan', 'atau', 'dengan', 'untuk',
