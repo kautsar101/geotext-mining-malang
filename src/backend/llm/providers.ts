@@ -22,7 +22,13 @@ const DEEPSEEK_API = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-v4-flash';
 
 type OpenAICompatibleResponse = {
-  choices?: Array<{ message?: { content?: string | null } }>;
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+    };
+    finish_reason?: string | null;
+  }>;
 };
 
 function readError(provider: string, status: number, body: string): Error {
@@ -66,8 +72,13 @@ async function callDatabaseKeyPool(
     if (res.ok) {
       const data = await res.json() as OpenAICompatibleResponse;
       const content = data.choices?.[0]?.message?.content || '';
+      if (!content.trim()) {
+        const finishReason = data.choices?.[0]?.finish_reason || 'unknown';
+        lastError = `${config.label} empty response (${finishReason})`;
+        await markProviderKeyFailure(key, 'server_error', lastError);
+        continue;
+      }
       await markProviderKeySuccess(key.id);
-      if (!content.trim()) throw new Error(`${config.label} empty response`);
       return content;
     }
 

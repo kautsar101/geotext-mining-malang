@@ -373,7 +373,7 @@ export async function handleLLMRequest(
       memorySummary: memory.summary,
     });
 
-    const answer = cleanModelText(await callLLM(finalMessages, mode === 'admin' ? 900 : 650, 0.3, callConfig), query);
+    const answer = cleanModelText(await callLLM(finalMessages, mode === 'admin' ? 1400 : 650, 0.3, callConfig), query);
 
     if (tablePanel?.type === 'rag') {
       const citedSourceIds = getCitationOrder(answer);
