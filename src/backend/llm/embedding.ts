@@ -19,12 +19,14 @@ let extractorPromise: Promise<FeatureExtractor> | null = null;
 function getExtractor(): Promise<FeatureExtractor> {
   if (!extractorPromise) {
     // Load the native ONNX dependency only when RAG is actually requested.
-    extractorPromise = import('@huggingface/transformers').then(({ pipeline }) =>
-      pipeline('feature-extraction', EMBEDDING_MODEL, {
+    extractorPromise = import('@huggingface/transformers').then(({ env, pipeline }) => {
+      // Vercel's deployed function filesystem is read-only outside /tmp.
+      env.cacheDir = '/tmp/transformers-cache';
+      return pipeline('feature-extraction', EMBEDDING_MODEL, {
         device: 'cpu',
         dtype: 'q8',
-      }) as unknown as Promise<FeatureExtractor>,
-    );
+      }) as unknown as Promise<FeatureExtractor>;
+    });
   }
 
   return extractorPromise;
