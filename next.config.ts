@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // ONNX needs its native Linux shared library inside the Vercel function.
+  outputFileTracingIncludes: {
+    '/api/llm': ['./node_modules/onnxruntime-node/bin/napi-v6/linux/**/*'],
+  },
   // Security headers applied to all routes
   async headers() {
     return [
