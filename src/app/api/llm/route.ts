@@ -3,6 +3,8 @@ import { ADMIN_SESSION_COOKIE, getAdminSession } from '@/backend/auth/admin';
 import { genSessionId, handleLLMRequest } from '@/backend/llm/service';
 import type { LLMProcessStep } from '@/backend/llm/types';
 
+export const runtime = 'nodejs';
+
 function encodeSSE(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }

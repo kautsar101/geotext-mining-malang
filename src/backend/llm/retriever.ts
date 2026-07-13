@@ -156,7 +156,16 @@ export async function retrieveSources(
   }
 
   const keywords = normalizeQueryText(queryText).split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8);
-  const searchTerms = expandSearchTerms(keywords.length > 0 ? keywords : [cleanSearchTerm(queryText)]);
+  // Location/category/sentiment are already enforced by RPC filters. They must
+  // not receive another relevance boost and drown out the actual topic.
+  const filterTokens = new Set(
+    [filters.kecamatan, filters.kategori, filters.sentimen]
+      .filter(Boolean)
+      .flatMap((value) => normalizeQueryText(value as string).split(/\s+/))
+      .map(cleanSearchTerm),
+  );
+  const topicKeywords = keywords.filter((keyword) => !filterTokens.has(keyword));
+  const searchTerms = expandSearchTerms(topicKeywords);
 
   if (searchTerms[0]) {
     let q = supabase.from('clean_news_articles')
@@ -191,7 +200,7 @@ export async function retrieveSources(
   }
 
   const rankedChunks = [...allSources]
-    .map((source) => ({ source, score: sourceRelevanceScore(source, keywords, searchTerms) }))
+    .map((source) => ({ source, score: sourceRelevanceScore(source, topicKeywords, searchTerms) }))
     .sort((a, b) => b.score - a.score);
   const articleGroups = new Map<string, { chunks: Array<{ source: RawSource; score: number }>; bestScore: number }>();
 

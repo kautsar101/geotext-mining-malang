@@ -1,4 +1,5 @@
 import type { ChatMessage } from './types';
+import { generateLocalQueryEmbedding, type QueryEmbedding } from './embedding';
 import {
   classifyProviderFailure,
   getAvailableProviderKeys,
@@ -13,19 +14,12 @@ export type LLMCallConfig = {
   provider: LLMProvider;
 };
 
-export type EmbeddingResult = {
-  vector: number[];
-  model: string;
-  prefix: 'query:';
-  dimensions: 1024;
-  normalized: true;
-};
+export type { QueryEmbedding as EmbeddingResult } from './embedding';
 
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant';
 const DEEPSEEK_API = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-v4-flash';
-const EMBEDDING_MODEL = 'intfloat/multilingual-e5-large';
 
 type OpenAICompatibleResponse = {
   choices?: Array<{ message?: { content?: string | null } }>;
@@ -97,47 +91,6 @@ export async function callLLM(
   return callDatabaseKeyPool(callConfig.provider, messages, maxTokens, temperature);
 }
 
-export async function generateEmbedding(queryText: string): Promise<EmbeddingResult | null> {
-  const serviceUrl = process.env.EMBEDDING_SERVICE_URL;
-  if (!serviceUrl) return null;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
-
-  try {
-    const response = await fetch(`${serviceUrl.replace(/\/$/, '')}/embed`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(process.env.EMBEDDING_SERVICE_TOKEN
-          ? { Authorization: `Bearer ${process.env.EMBEDDING_SERVICE_TOKEN}` }
-          : {}),
-      },
-      body: JSON.stringify({
-        text: queryText,
-        prefix: 'query:',
-        model: EMBEDDING_MODEL,
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) throw new Error(`Embedding service error (${response.status})`);
-    const payload = await response.json() as { embedding?: unknown; dimensions?: unknown; model?: unknown };
-    if (!Array.isArray(payload.embedding) || payload.embedding.length !== 1024) {
-      throw new Error('Embedding service mengembalikan vector yang bukan 1024 dimensi');
-    }
-    if (payload.model && payload.model !== EMBEDDING_MODEL) {
-      throw new Error(`Model embedding tidak sesuai: ${String(payload.model)}`);
-    }
-
-    return {
-      vector: payload.embedding.map(Number),
-      model: EMBEDDING_MODEL,
-      prefix: 'query:',
-      dimensions: 1024,
-      normalized: true,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
+export async function generateEmbedding(queryText: string): Promise<QueryEmbedding> {
+  return generateLocalQueryEmbedding(queryText);
 }
