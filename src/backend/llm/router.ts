@@ -37,6 +37,7 @@ type RouterResult = {
   intents: LLMIntent[];
   plan: QueryPlan;
   reason: 'structured-router' | 'heuristic-fallback';
+  error?: string;
 };
 
 const KECAMATAN = [
@@ -377,7 +378,7 @@ async function classifyWithLLM(
   fallback: QueryPlan,
   callConfig?: LLMCallConfig,
   now = new Date(),
-): Promise<QueryPlan | null> {
+): Promise<{ plan: QueryPlan | null; error?: string }> {
   const localDate = localDateParts(now);
   const recentContext = recentMessages.slice(-6).map((message) => `${message.role}: ${message.content}`).join('\n');
   const prompt = `Ubah pertanyaan user menjadi query plan JSON untuk database berita Kabupaten Malang.
@@ -409,10 +410,14 @@ Pertanyaan sekarang:
 ${normalizeQuery(query).slice(0, 3000)}`;
 
   try {
-    const result = await callLLM([{ role: 'user', content: prompt }], 450, 0, callConfig);
-    return normalizePlan(safeJsonParse<unknown>(result, null), query, fallback, now);
-  } catch {
-    return null;
+    const routerConfig = callConfig ? { ...callConfig, thinking: 'disabled' as const } : callConfig;
+    const result = await callLLM([{ role: 'user', content: prompt }], 450, 0, routerConfig);
+    return { plan: normalizePlan(safeJsonParse<unknown>(result, null), query, fallback, now) };
+  } catch (error) {
+    return {
+      plan: null,
+      error: error instanceof Error ? error.message : 'Router LLM gagal',
+    };
   }
 }
 
@@ -424,11 +429,12 @@ export async function classifyIntents(
   const recentMessages = options.recentMessages || [];
   const now = options.now || new Date();
   const fallback = createFallbackPlan(query, recentMessages, now);
-  const plan = await classifyWithLLM(query, recentMessages, fallback, callConfig, now);
-  const selected = plan || fallback;
+  const routed = await classifyWithLLM(query, recentMessages, fallback, callConfig, now);
+  const selected = routed.plan || fallback;
   return {
     intents: selected.intents,
     plan: selected,
-    reason: plan ? 'structured-router' : 'heuristic-fallback',
+    reason: routed.plan ? 'structured-router' : 'heuristic-fallback',
+    error: routed.error,
   };
 }

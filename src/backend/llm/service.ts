@@ -5,9 +5,16 @@ import {
   OUT_OF_CONTEXT_RESPONSE,
   sanitizeInput,
 } from './guardrails';
-import { getSessionMemory, recordExchange } from './memory';
+import {
+  checkpointExchange,
+  getSessionMemory,
+  recordExchange,
+  startExchange,
+  type ChatLogId,
+  type StoredProcessStep,
+} from './memory';
 import { buildFinalMessages } from './prompts';
-import { callLLM, type LLMCallConfig } from './providers';
+import { callLLM, getLLMModel, type LLMCallConfig } from './providers';
 import { classifyIntents, type QueryPlan } from './router';
 import { compilePlanToSQL, executeQueryPlan } from './sql';
 import { parseRetrievalQuery, retrieveSources } from './retriever';
@@ -183,6 +190,9 @@ function getCitationOrder(answer: string): number[] {
 
 function toFriendlyLLMError(error: string): string {
   const lowered = error.toLowerCase();
+  if (lowered.includes('finish_reason: length') || lowered.includes('mencapai max_tokens')) {
+    return 'Maaf, jawaban AI mencapai batas panjang. Coba buat pertanyaan lebih spesifik.';
+  }
   if (lowered.includes('413') || lowered.includes('request too large') || lowered.includes('tokens per minute') || lowered.includes('tpm')) {
     return 'Maaf, permintaan terlalu besar untuk diproses saat ini. Coba ringkas pertanyaan atau mulai chat baru.';
   }
@@ -215,19 +225,72 @@ export async function handleLLMRequest(
   let routeForLog = '';
   let activeSessionId = fallbackSessionId;
   const mode = options.mode === 'admin' ? 'admin' : 'guest';
+  const provider = mode === 'admin' ? 'deepseek' : 'groq';
+  const model = getLLMModel(provider);
   const processSteps: LLMProcessStep[] = [];
+  const storedProcessSteps: StoredProcessStep[] = [];
+  let logId: ChatLogId | null = null;
+  let currentStageForLog: string | null = 'request_received';
+  let lastCompletedStageForLog: string | null = null;
+  let routingReasonForLog: string | undefined;
+  let queryPlanForLog: QueryPlan | undefined;
+  let sqlGeneratedForLog: string | undefined;
+  let sqlResultForLog: unknown;
+  let sourcesForLog: Source[] = [];
+  let embeddingDebugForLog: unknown;
+  let providerDebugForLog: Record<string, unknown> | undefined;
+
+  const completeActiveStep = () => {
+    const activeStep = storedProcessSteps.at(-1);
+    if (!activeStep || activeStep.status !== 'running') return;
+    activeStep.status = 'completed';
+    activeStep.finishedAtMs = Date.now() - t0;
+    activeStep.durationMs = activeStep.finishedAtMs - activeStep.startedAtMs;
+    lastCompletedStageForLog = activeStep.id;
+  };
+
+  const failActiveStep = (error: string) => {
+    const activeStep = storedProcessSteps.at(-1);
+    if (!activeStep || activeStep.status !== 'running') return;
+    activeStep.status = 'failed';
+    activeStep.finishedAtMs = Date.now() - t0;
+    activeStep.durationMs = activeStep.finishedAtMs - activeStep.startedAtMs;
+    activeStep.error = error;
+  };
 
   const emitStep = (id: LLMProcessStepId, label: string) => {
+    completeActiveStep();
     const step = { id, label, elapsedMs: Date.now() - t0 };
     processSteps.push(step);
+    storedProcessSteps.push({
+      id,
+      label,
+      status: 'running',
+      startedAtMs: step.elapsedMs,
+    });
+    currentStageForLog = id;
     options.onStep?.(step);
   };
+
+  const saveCheckpoint = async () => checkpointExchange(logId, {
+    route: routeForLog,
+    routingReason: routingReasonForLog,
+    queryPlan: queryPlanForLog,
+    sqlGenerated: sqlGeneratedForLog,
+    sqlResult: sqlResultForLog,
+    sources: sourcesForLog,
+    embeddingDebug: embeddingDebugForLog,
+    providerDebug: providerDebugForLog,
+    processSteps: storedProcessSteps,
+    currentStage: currentStageForLog,
+    lastCompletedStage: lastCompletedStageForLog,
+  });
 
   try {
     const query = typeof body.query === 'string' ? sanitizeInput(body.query) : '';
     const sid = typeof body.sessionId === 'string' && body.sessionId ? body.sessionId : fallbackSessionId;
     const includeDebug = body.debug === true;
-    const callConfig: LLMCallConfig = { provider: mode === 'admin' ? 'deepseek' : 'groq' };
+    const callConfig: LLMCallConfig = { provider };
 
     queryForLog = query;
 
@@ -236,18 +299,35 @@ export async function handleLLMRequest(
     }
 
     activeSessionId = sid;
+    currentStageForLog = 'load_memory';
+    logId = await startExchange({
+      sessionId: sid,
+      query,
+      provider,
+      model,
+      currentStage: currentStageForLog,
+    });
     const memory = await getSessionMemory(sid, mode === 'admin' ? 10 : 5);
+    lastCompletedStageForLog = 'load_memory';
     const recentMessages = memory.recentMessages;
 
     emitStep('understand', 'Memahami pertanyaan...');
 
     if (!isInProjectContext(query, recentMessages)) {
       routeForLog = 'out_of_context';
+      completeActiveStep();
+      currentStageForLog = null;
       await recordExchange({
+        logId,
         sessionId: sid,
         query,
         route: routeForLog,
+        provider,
+        model,
         response: OUT_OF_CONTEXT_RESPONSE,
+        processSteps: storedProcessSteps,
+        currentStage: currentStageForLog,
+        lastCompletedStage: lastCompletedStageForLog,
         latencyMs: Date.now() - t0,
       });
 
@@ -282,21 +362,39 @@ export async function handleLLMRequest(
     };
     if (!isGreetingOnly(query)) {
       emitStep('classify_request', 'Menentukan informasi yang diperlukan...');
+      await saveCheckpoint();
       const routed = await classifyIntents(query, callConfig, { recentMessages });
       intents = routed.intents;
       queryPlan = routed.plan;
+      routingReasonForLog = routed.reason;
+      providerDebugForLog = routed.error
+        ? { router: { status: 'fallback', provider, model, error: routed.error } }
+        : { router: { status: 'success', provider, model } };
     }
 
     if (!intents.includes('chat')) intents.push('chat');
     routeForLog = `${intents.join('+')}:${callConfig.provider}`;
+    queryPlanForLog = queryPlan;
+    completeActiveStep();
+    currentStageForLog = null;
+    await saveCheckpoint();
 
     if (isGreetingOnly(query) && intents.length === 1 && intents[0] === 'chat') {
       const response = 'Halo! Saya bisa bantu cari berita daerah, hitung statistik berita, atau menjelaskan hasilnya.';
+      completeActiveStep();
+      currentStageForLog = null;
       await recordExchange({
+        logId,
         sessionId: sid,
         query,
         route: routeForLog,
+        provider,
+        model,
+        queryPlan,
         response,
+        processSteps: storedProcessSteps,
+        currentStage: currentStageForLog,
+        lastCompletedStage: lastCompletedStageForLog,
         latencyMs: Date.now() - t0,
       });
 
@@ -320,13 +418,19 @@ export async function handleLLMRequest(
       sqlGenerated = compilePlanToSQL(queryPlan);
       emitStep('validate_query', 'Memeriksa kebutuhan data...');
       emitStep('query_database', 'Mengambil data dari database...');
+      sqlGeneratedForLog = sqlGenerated;
+      await saveCheckpoint();
       const result = await executeQueryPlan(queryPlan);
       sqlResult = result.data;
+      sqlResultForLog = sqlResult;
       sqlMeta = result.meta;
       emitStep('validate_data', 'Memeriksa hasil data...');
       sqlContext = result.data.length > 0
         ? `Data database (${result.meta}): ${JSON.stringify(result.data, null, 2)}`
         : `Data database (${result.meta}): []\nPeringatan: hasil database kosong. Jangan membuat angka statistik sendiri.`;
+      completeActiveStep();
+      currentStageForLog = null;
+      await saveCheckpoint();
     }
 
     let sources: Source[] = [];
@@ -339,6 +443,7 @@ export async function handleLLMRequest(
       emitStep('parse_query', 'Mengenali topik, lokasi, kategori, dan periode...');
       const parsed = await parseRetrievalQuery(query);
       emitStep('search_documents', 'Mencari berita yang sesuai...');
+      await saveCheckpoint();
       const retrieval = await retrieveSources(queryPlan.filters.topic.join(' ') || query, {
         kecamatan: queryPlan.filters.kecamatan || parsed.kecamatan,
         kategori: queryPlan.filters.kategori || parsed.kategori,
@@ -349,6 +454,11 @@ export async function handleLLMRequest(
       sources = retrieval.sources;
       searchInfo = retrieval.searchInfo;
       embeddingDebug = retrieval.embeddingDebug;
+      sourcesForLog = sources;
+      embeddingDebugForLog = { queryPlan, retrieval: embeddingDebug };
+      completeActiveStep();
+      currentStageForLog = null;
+      await saveCheckpoint();
     }
 
     // Map tablePanel dari SQL result (SELECT only) atau RAG sources
@@ -376,6 +486,7 @@ export async function handleLLMRequest(
         category: String(row.category ?? ''),
         sentiment: String(row.sentiment ?? ''),
       }));
+      sourcesForLog = sources;
     } else if (sources.length > 0 && !searchInfo.includes('terbaru')) {
       tablePanel = {
         type: 'rag',
@@ -406,15 +517,26 @@ export async function handleLLMRequest(
     const deterministicAnswer = directAnswer || listAnswer || groupAnswer;
     if (deterministicAnswer) {
       emitStep('format_answer', 'Merapikan jawaban dan sumber...');
+      completeActiveStep();
+      currentStageForLog = null;
       await recordExchange({
+        logId,
         sessionId: sid,
         query,
         route: routeForLog,
+        provider,
+        model,
+        routingReason: routingReasonForLog,
+        queryPlan,
         response: deterministicAnswer,
         sqlGenerated,
         sqlResult,
         sources,
         embeddingDebug: { queryPlan, retrieval: embeddingDebug || null },
+        providerDebug: providerDebugForLog,
+        processSteps: storedProcessSteps,
+        currentStage: currentStageForLog,
+        lastCompletedStage: lastCompletedStageForLog,
         latencyMs: Date.now() - t0,
       });
 
@@ -454,10 +576,42 @@ export async function handleLLMRequest(
     });
 
     let answer: string;
+    currentStageForLog = 'final_llm';
+    providerDebugForLog = {
+      ...providerDebugForLog,
+      finalAnswer: {
+        status: 'running',
+        provider,
+        model,
+        maxTokens: mode === 'admin' ? 1400 : 650,
+      },
+    };
+    await saveCheckpoint();
     try {
       const rawAnswer = await callLLM(finalMessages, mode === 'admin' ? 1400 : 650, 0.3, callConfig);
       answer = cleanModelText(rawAnswer, query);
+      providerDebugForLog = {
+        ...providerDebugForLog,
+        finalAnswer: {
+          status: 'success',
+          provider,
+          model,
+          maxTokens: mode === 'admin' ? 1400 : 650,
+        },
+      };
     } catch (error) {
+      const providerError = error instanceof Error ? error.message : 'Final LLM call gagal';
+      providerDebugForLog = {
+        ...providerDebugForLog,
+        finalAnswer: {
+          status: 'error',
+          provider,
+          model,
+          maxTokens: mode === 'admin' ? 1400 : 650,
+          error: providerError,
+          fallbackUsed: sources.length > 0,
+        },
+      };
       if (sources.length === 0) throw error;
       answer = formatRagFallbackAnswer(queryPlan, sources);
     }
@@ -479,15 +633,26 @@ export async function handleLLMRequest(
       tablePanel = citedRows.length > 0 ? { type: 'rag', rows: citedRows } : undefined;
     }
 
+    completeActiveStep();
+    currentStageForLog = null;
     await recordExchange({
+      logId,
       sessionId: sid,
       query,
       route: routeForLog,
+      provider,
+      model,
+      routingReason: routingReasonForLog,
+      queryPlan,
       response: answer,
       sqlGenerated,
       sqlResult,
       sources,
       embeddingDebug: { queryPlan, retrieval: embeddingDebug || null },
+      providerDebug: providerDebugForLog,
+      processSteps: storedProcessSteps,
+      currentStage: currentStageForLog,
+      lastCompletedStage: lastCompletedStageForLog,
       latencyMs: Date.now() - t0,
     });
 
@@ -517,10 +682,26 @@ export async function handleLLMRequest(
   } catch (e: unknown) {
     const error = e instanceof Error ? e.message : 'Internal error';
     const friendlyError = toFriendlyLLMError(error);
+    const failedStage = currentStageForLog || storedProcessSteps.at(-1)?.id || 'unknown';
+    failActiveStep(error);
     await recordExchange({
+      logId,
       sessionId: activeSessionId,
       query: queryForLog,
       route: routeForLog,
+      provider,
+      model,
+      routingReason: routingReasonForLog,
+      queryPlan: queryPlanForLog,
+      sqlGenerated: sqlGeneratedForLog,
+      sqlResult: sqlResultForLog,
+      sources: sourcesForLog,
+      embeddingDebug: embeddingDebugForLog,
+      providerDebug: providerDebugForLog,
+      processSteps: storedProcessSteps,
+      currentStage: failedStage,
+      lastCompletedStage: lastCompletedStageForLog,
+      failedStage,
       error,
       latencyMs: Date.now() - t0,
     });

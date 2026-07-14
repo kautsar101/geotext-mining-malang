@@ -12,6 +12,7 @@ export type LLMProvider = (typeof LLM_PROVIDERS)[number];
 
 export type LLMCallConfig = {
   provider: LLMProvider;
+  thinking?: 'enabled' | 'disabled';
 };
 
 export type { QueryEmbedding as EmbeddingResult } from './embedding';
@@ -40,11 +41,16 @@ function providerConfig(provider: LLMProvider) {
   return { api: DEEPSEEK_API, model: DEEPSEEK_MODEL, label: 'DeepSeek' };
 }
 
+export function getLLMModel(provider: LLMProvider): string {
+  return providerConfig(provider).model;
+}
+
 async function callDatabaseKeyPool(
   provider: LLMProvider,
   messages: ChatMessage[],
   maxTokens: number,
   temperature: number,
+  thinking?: LLMCallConfig['thinking'],
 ): Promise<string> {
   const keys = await getAvailableProviderKeys(provider);
   const config = providerConfig(provider);
@@ -66,14 +72,23 @@ async function callDatabaseKeyPool(
         messages,
         max_tokens: maxTokens,
         temperature,
+        ...(provider === 'deepseek' && thinking ? { thinking: { type: thinking } } : {}),
       }),
     });
 
     if (res.ok) {
       const data = await res.json() as OpenAICompatibleResponse;
-      const content = data.choices?.[0]?.message?.content || '';
+      const choice = data.choices?.[0];
+      const finishReason = choice?.finish_reason || 'unknown';
+      const content = choice?.message?.content || '';
+
+      if (finishReason === 'length') {
+        // The key worked; only this generation exhausted its output budget.
+        await markProviderKeySuccess(key.id);
+        throw new Error(`${config.label} output mencapai max_tokens (finish_reason: length)`);
+      }
+
       if (!content.trim()) {
-        const finishReason = data.choices?.[0]?.finish_reason || 'unknown';
         lastError = `${config.label} empty response (${finishReason})`;
         await markProviderKeyFailure(key, 'server_error', lastError);
         continue;
@@ -99,7 +114,13 @@ export async function callLLM(
   temperature = 0.2,
   callConfig: LLMCallConfig = { provider: 'groq' },
 ): Promise<string> {
-  return callDatabaseKeyPool(callConfig.provider, messages, maxTokens, temperature);
+  return callDatabaseKeyPool(
+    callConfig.provider,
+    messages,
+    maxTokens,
+    temperature,
+    callConfig.thinking,
+  );
 }
 
 export async function generateEmbedding(queryText: string): Promise<QueryEmbedding> {
