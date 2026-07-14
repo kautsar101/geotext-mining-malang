@@ -67,6 +67,10 @@ function KecPieSection({ kecProps, cc }: { kecProps: KecProp[]; cc: typeof C }) 
   const allNames = kecProps.map(k => k.name).sort((a, b) => a.localeCompare(b));
   const [selected, setSelected] = useState<string>(allNames[0] ?? "");
 
+  useEffect(() => {
+    setSelected((current) => current && allNames.includes(current) ? current : (allNames[0] ?? ""));
+  }, [kecProps]);
+
   const data = kecProps.find(k => k.name === selected);
 
   return (
@@ -123,7 +127,7 @@ function KecSinglePieLarge({ data, cc }: { data: KecProp; cc: typeof C }) {
   const total = data.pCount + data.nCount + data.negCount;
 
   return (
-    <ViewportChart className="flex flex-col items-center">{(isVisible) => (
+    <ViewportChart className="flex w-full flex-col items-center">{(isVisible) => (
       <ResponsiveContainer width="100%" height={300}>
         <PieChart>
           <Pie
