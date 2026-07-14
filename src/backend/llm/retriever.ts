@@ -26,6 +26,8 @@ type ParsedQuery = {
   kecamatan: string | null;
   kategori: string | null;
   sentimen: string | null;
+  dateFrom: string | null;
+  dateTo: string | null;
   keywords: string[];
 };
 
@@ -125,20 +127,30 @@ export async function parseRetrievalQuery(
     kecamatan: canonicalKecamatan(kecamatan),
     kategori,
     sentimen,
+    dateFrom: null,
+    dateTo: null,
     keywords: keywords.length > 0 ? keywords : lowered.split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8),
   };
 }
 
+function withinDateRange(source: RawSource, dateFrom: string | null, dateTo: string | null): boolean {
+  const date = source.published_date;
+  if (!date) return !dateFrom && !dateTo;
+  if (dateFrom && date < dateFrom) return false;
+  if (dateTo && date >= dateTo) return false;
+  return true;
+}
+
 export async function retrieveSources(
   queryText: string,
-  filters: Pick<ParsedQuery, 'kecamatan' | 'kategori' | 'sentimen'>,
+  filters: Pick<ParsedQuery, 'kecamatan' | 'kategori' | 'sentimen' | 'dateFrom' | 'dateTo'>,
   topK = RAG_TOP_K,
   includeVector = false,
   onProgress?: (id: LLMProcessStepId, label: string) => void,
 ): Promise<{ sources: Source[]; searchInfo: string; embeddingDebug: EmbeddingDebug }> {
   const allSources: RawSource[] = [];
   const searchSteps: string[] = [];
-  const candidateLimit = Math.max(topK * 3, 30);
+  const candidateLimit = Math.max(topK * (filters.dateFrom || filters.dateTo ? 8 : 3), 30);
   const embeddingDebug: EmbeddingDebug = {
     status: 'unavailable',
     model: 'intfloat/multilingual-e5-large',
@@ -149,6 +161,8 @@ export async function retrieveSources(
     candidateLimit,
     topKRequested: topK,
     matchThreshold: 0.35,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
     matches: [],
   };
 
@@ -157,14 +171,32 @@ export async function retrieveSources(
     // Jangan biarkan cold start model embedding memutus seluruh request LLM.
     const embedding = await withTimeout(generateEmbedding(queryText), EMBEDDING_TIMEOUT_MS);
     if (embedding) {
-      const { data } = await supabase.rpc('match_news_embeddings', {
+      let rpcResult = await supabase.rpc('match_news_embeddings', {
         query_embedding: embedding.vector,
         match_threshold: 0.35,
         match_count: candidateLimit,
         filter_kecamatan: filters.kecamatan || null,
         filter_kategori: filters.kategori || null,
         filter_sentimen: filters.sentimen || null,
+        filter_date_from: filters.dateFrom || null,
+        filter_date_to: filters.dateTo || null,
       });
+
+      // Keep production functional until the date-aware RPC migration is applied.
+      if (rpcResult.error) {
+        rpcResult = await supabase.rpc('match_news_embeddings', {
+          query_embedding: embedding.vector,
+          match_threshold: 0.35,
+          match_count: candidateLimit,
+          filter_kecamatan: filters.kecamatan || null,
+          filter_kategori: filters.kategori || null,
+          filter_sentimen: filters.sentimen || null,
+        });
+      }
+
+      const data = (rpcResult.data as RawSource[] | null)?.filter((source) =>
+        withinDateRange(source, filters.dateFrom, filters.dateTo),
+      );
       embeddingDebug.status = 'success';
       embeddingDebug.rawMatchCount = data?.length || 0;
       if (includeVector) embeddingDebug.queryVector = embedding.vector;
@@ -200,6 +232,8 @@ export async function retrieveSources(
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
+    if (filters.dateFrom) q = q.gte('published_date', filters.dateFrom);
+    if (filters.dateTo) q = q.lt('published_date', filters.dateTo);
     q = q.or(searchTerms.flatMap((k) => [`title.ilike.%${k}%`, `content_clean.ilike.%${k}%`]).join(','));
 
     const { data } = await q;
@@ -217,6 +251,8 @@ export async function retrieveSources(
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
+    if (filters.dateFrom) q = q.gte('published_date', filters.dateFrom);
+    if (filters.dateTo) q = q.lt('published_date', filters.dateTo);
 
     const { data } = await q;
     if (data && data.length > 0) {
@@ -303,6 +339,8 @@ export type EmbeddingDebug = {
   candidateLimit: number;
   topKRequested: number;
   matchThreshold: number;
+  dateFrom?: string | null;
+  dateTo?: string | null;
   rawMatchCount?: number;
   selectedArticleCount?: number;
   queryVector?: number[];

@@ -1,9 +1,7 @@
 import {
   cleanModelText,
   isGreetingOnly,
-  isContextualFollowUp,
   isInProjectContext,
-  normalizeQueryText,
   OUT_OF_CONTEXT_RESPONSE,
   sanitizeInput,
 } from './guardrails';
@@ -11,7 +9,7 @@ import { getSessionMemory, recordExchange } from './memory';
 import { buildFinalMessages } from './prompts';
 import { callLLM, type LLMCallConfig } from './providers';
 import { classifyIntents, type QueryPlan } from './router';
-import { executeSQL, generateSQL, validateSQL } from './sql';
+import { compilePlanToSQL, executeQueryPlan } from './sql';
 import { parseRetrievalQuery, retrieveSources } from './retriever';
 import type { LLMIntent, LLMProcessStep, LLMProcessStepId, Source } from './types';
 
@@ -45,19 +43,6 @@ type TablePanel = {
   type: 'sql' | 'rag';
   rows: TablePanelRow[];
 };
-
-function buildContextualQuery(query: string, recentMessages: { role: string; content: string }[]): string {
-  if (!isContextualFollowUp(query)) return query;
-
-  const previousUserQueries = recentMessages
-    .filter((message) => message.role === 'user')
-    .slice(-2)
-    .map((message) => message.content.trim())
-    .filter(Boolean);
-
-  if (previousUserQueries.length === 0) return query;
-  return `${previousUserQueries.join(' ')}\nPertanyaan lanjutan: ${query}`;
-}
 
 const KECAMATAN_LABELS: Record<string, string> = {
   ampelgading: 'Ampelgading',
@@ -95,58 +80,90 @@ const KECAMATAN_LABELS: Record<string, string> = {
   wonosari: 'Wonosari',
 };
 
-function formatDirectCountAnswer(query: string, sqlResult: unknown): string | null {
+function formatFilterScope(plan: QueryPlan): string {
+  const details: string[] = [];
+  if (plan.filters.kategori) details.push(`kategori ${plan.filters.kategori}`);
+  if (plan.filters.sentimen) {
+    const labels = { positive: 'positif', negative: 'negatif', neutral: 'netral' };
+    details.push(`sentimen ${labels[plan.filters.sentimen]}`);
+  }
+  if (plan.filters.kecamatan) details.push(`Kecamatan ${KECAMATAN_LABELS[plan.filters.kecamatan] || plan.filters.kecamatan}`);
+  if (plan.filters.temporalLabel) details.push(plan.filters.temporalLabel);
+  return details.length > 0 ? ` untuk ${details.join(', ')}` : '';
+}
+
+function formatDirectCountAnswer(plan: QueryPlan, sqlResult: unknown): string | null {
   if (!Array.isArray(sqlResult)) return null;
   const firstRow = sqlResult[0] as Record<string, unknown> | undefined;
   const count = Number(firstRow?.count);
   if (!Number.isFinite(count)) return null;
-
-  const lowered = normalizeQueryText(query);
-  const category = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'].find((value) => lowered.includes(value));
-  const sentiment = lowered.includes('positif')
-    ? 'positif'
-    : lowered.includes('negatif')
-      ? 'negatif'
-      : lowered.includes('netral')
-        ? 'netral'
-        : null;
-  const kecamatan = Object.keys(KECAMATAN_LABELS).find((value) => lowered.includes(value));
-
-  const subject = [
-    'berita',
-    category ? category : '',
-    sentiment ? `dengan sentimen ${sentiment}` : '',
-  ].filter(Boolean).join(' ');
-  const location = kecamatan ? ` di Kecamatan ${KECAMATAN_LABELS[kecamatan]}` : '';
-
-  if (count === 0) {
-    return `Belum ada ${subject}${location}.`;
-  }
-
-  return `Ada ${count} ${subject}${location}.`;
+  const scope = formatFilterScope(plan);
+  return count === 0
+    ? `Tidak ditemukan berita${scope}.`
+    : `Terdapat ${count} berita${scope}.`;
 }
 
-function formatLatestNewsAnswer(sqlResult: unknown): string | null {
+function summarizeContent(value: unknown): string {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  const firstSentence = normalized.match(/^.{1,320}?[.!?](?:\s|$)/)?.[0]?.trim();
+  if (firstSentence) return firstSentence;
+  if (normalized.length <= 280) return normalized;
+  const shortened = normalized.slice(0, 280);
+  const boundary = shortened.lastIndexOf(' ');
+  return `${shortened.slice(0, boundary > 180 ? boundary : 280).trim()}…`;
+}
+
+function formatNewsListAnswer(plan: QueryPlan, sqlResult: unknown): string | null {
   if (!Array.isArray(sqlResult)) return null;
-  if (sqlResult.length === 0) return 'Belum ada berita yang tersedia dalam database.';
+  if (sqlResult.length === 0) return `Tidak ditemukan berita${formatFilterScope(plan)}.`;
 
   const rows = sqlResult as Record<string, unknown>[];
   const items = rows.slice(0, 10).map((row, index) => {
     const title = String(row.title || 'Berita tanpa judul').trim();
-    const content = String(row.content_clean || '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 220);
+    const content = summarizeContent(row.content_clean);
     const details = [
       row.published_date ? `Tanggal: ${String(row.published_date).slice(0, 10)}` : '',
       row.primary_kecamatan ? `Kecamatan: ${String(row.primary_kecamatan)}` : '',
       row.source ? `Sumber: ${String(row.source)}` : '',
     ].filter(Boolean).join(' | ');
-    const summary = content ? ` ${content}${content.endsWith('.') ? '' : '.'}` : '';
+    const summary = content ? ` ${content}${/[.!?…]$/.test(content) ? '' : '.'}` : '';
     return `${index + 1}. **${title}**.${summary}${details ? ` ${details}.` : ''} [${index + 1}]`;
   });
 
-  return `Berikut berita terbaru yang tersedia dalam database:\n\n${items.join('\n\n')}`;
+  return `Berikut berita yang ditemukan${formatFilterScope(plan)}:\n\n${items.join('\n\n')}`;
+}
+
+function formatRagFallbackAnswer(plan: QueryPlan, sources: Source[]): string {
+  if (sources.length === 0) return `Tidak ditemukan berita${formatFilterScope(plan)}.`;
+  const items = sources.slice(0, 10).map((source, index) => {
+    const summary = summarizeContent(source.snippet);
+    return `${index + 1}. **${source.title || 'Berita tanpa judul'}**.${summary ? ` ${summary}` : ''} [${source.id}]`;
+  });
+  return `Berikut berita yang paling relevan${formatFilterScope(plan)}:\n\n${items.join('\n\n')}`;
+}
+
+function formatGroupAnswer(plan: QueryPlan, sqlResult: unknown): string | null {
+  if (!Array.isArray(sqlResult) || !plan.groupBy) return null;
+  const rows = sqlResult as Record<string, unknown>[];
+  const total = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  if (total === 0) return `Tidak ditemukan berita${formatFilterScope(plan)}.`;
+
+  const labels: Record<string, string> = {
+    category: 'kategori',
+    sentiment: 'sentimen',
+    primary_kecamatan: 'kecamatan',
+    published_date: 'tanggal',
+    positive: 'positif',
+    negative: 'negatif',
+    neutral: 'netral',
+  };
+  const items = rows.map((row) => {
+    const value = String(row[plan.groupBy as string] || '-');
+    const count = Number(row.total || 0);
+    const percentage = (count / total) * 100;
+    return `- **${labels[value] || value}**: ${count} berita (${percentage.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%)`;
+  });
+  return `Distribusi berdasarkan ${labels[plan.groupBy] || plan.groupBy}${formatFilterScope(plan)}:\n\n${items.join('\n')}`;
 }
 
 function getCitationOrder(answer: string): number[] {
@@ -221,7 +238,6 @@ export async function handleLLMRequest(
     activeSessionId = sid;
     const memory = await getSessionMemory(sid, mode === 'admin' ? 10 : 5);
     const recentMessages = memory.recentMessages;
-    const contextualQuery = buildContextualQuery(query, recentMessages);
 
     emitStep('understand', 'Memahami pertanyaan...');
 
@@ -247,15 +263,26 @@ export async function handleLLMRequest(
 
     let intents: LLMIntent[] = ['chat'];
     let queryPlan: QueryPlan = {
-      capabilities: ['general_chat'],
+      operation: 'chat',
+      groupBy: null,
       intents: ['chat'],
-      filters: { topic: [], kecamatan: null, kategori: null, sentimen: null },
-      temporal: { kind: 'none' },
+      filters: {
+        topic: [],
+        kecamatan: null,
+        kategori: null,
+        sentimen: null,
+        dateFrom: null,
+        dateTo: null,
+        temporalLabel: null,
+      },
+      sort: null,
+      limit: 10,
       confidence: 1,
+      inheritedContext: false,
     };
     if (!isGreetingOnly(query)) {
       emitStep('classify_request', 'Menentukan informasi yang diperlukan...');
-      const routed = await classifyIntents(contextualQuery, callConfig);
+      const routed = await classifyIntents(query, callConfig, { recentMessages });
       intents = routed.intents;
       queryPlan = routed.plan;
     }
@@ -290,22 +317,16 @@ export async function handleLLMRequest(
 
     if (intents.includes('sql')) {
       emitStep('analyze_data', 'Menentukan data yang perlu dihitung...');
-      sqlGenerated = await generateSQL(contextualQuery, callConfig, {
-        latest: queryPlan.temporal.kind !== 'none',
-      });
+      sqlGenerated = compilePlanToSQL(queryPlan);
       emitStep('validate_query', 'Memeriksa kebutuhan data...');
-      if (validateSQL(sqlGenerated)) {
-        emitStep('query_database', 'Mengambil data dari database...');
-        const result = await executeSQL(sqlGenerated);
-        sqlResult = result.data;
-        sqlMeta = result.meta;
-        emitStep('validate_data', 'Memeriksa hasil data...');
-        sqlContext = result.data.length > 0
-          ? `Data database (${result.meta}): ${JSON.stringify(result.data, null, 2)}`
-          : `Data database (${result.meta}): []\nPeringatan: hasil database kosong. Jangan membuat angka statistik sendiri.`;
-      } else {
-        sqlContext = 'Data database tidak tersedia.\nPeringatan: jangan membuat angka statistik sendiri.';
-      }
+      emitStep('query_database', 'Mengambil data dari database...');
+      const result = await executeQueryPlan(queryPlan);
+      sqlResult = result.data;
+      sqlMeta = result.meta;
+      emitStep('validate_data', 'Memeriksa hasil data...');
+      sqlContext = result.data.length > 0
+        ? `Data database (${result.meta}): ${JSON.stringify(result.data, null, 2)}`
+        : `Data database (${result.meta}): []\nPeringatan: hasil database kosong. Jangan membuat angka statistik sendiri.`;
     }
 
     let sources: Source[] = [];
@@ -316,12 +337,14 @@ export async function handleLLMRequest(
 
     if (intents.includes('rag')) {
       emitStep('parse_query', 'Mengenali topik, lokasi, kategori, dan periode...');
-      const parsed = await parseRetrievalQuery(contextualQuery);
+      const parsed = await parseRetrievalQuery(query);
       emitStep('search_documents', 'Mencari berita yang sesuai...');
-      const retrieval = await retrieveSources(contextualQuery, {
-        kecamatan: parsed.kecamatan,
-        kategori: parsed.kategori,
-        sentimen: parsed.sentimen,
+      const retrieval = await retrieveSources(queryPlan.filters.topic.join(' ') || query, {
+        kecamatan: queryPlan.filters.kecamatan || parsed.kecamatan,
+        kategori: queryPlan.filters.kategori || parsed.kategori,
+        sentimen: queryPlan.filters.sentimen || parsed.sentimen,
+        dateFrom: queryPlan.filters.dateFrom,
+        dateTo: queryPlan.filters.dateTo,
       }, mode === 'admin' ? 20 : 10, includeDebug, emitStep);
       sources = retrieval.sources;
       searchInfo = retrieval.searchInfo;
@@ -343,9 +366,15 @@ export async function handleLLMRequest(
       // ponytail: override sources with SQL data so citation [N] links match SQL results
       sources = (sqlResult as Record<string, unknown>[]).map((row: Record<string, unknown>, i: number) => ({
         id: i + 1,
+        articleId: typeof row.id === 'number' ? row.id : undefined,
         title: String(row.title ?? ''),
+        snippet: String(row.content_clean ?? ''),
         url: String(row.url ?? ''),
         source: String(row.source ?? ''),
+        date: String(row.published_date ?? ''),
+        kecamatan: String(row.primary_kecamatan ?? ''),
+        category: String(row.category ?? ''),
+        sentiment: String(row.sentiment ?? ''),
       }));
     } else if (sources.length > 0 && !searchInfo.includes('terbaru')) {
       tablePanel = {
@@ -366,12 +395,15 @@ export async function handleLLMRequest(
     emitStep('compose_answer', 'Menyusun jawaban...');
 
     const directAnswer = sqlMeta === 'count' && !intents.includes('rag')
-      ? formatDirectCountAnswer(contextualQuery, sqlResult)
+      ? formatDirectCountAnswer(queryPlan, sqlResult)
       : null;
-    const latestAnswer = sqlMeta === 'select' && queryPlan.temporal.kind !== 'none' && !intents.includes('rag')
-      ? formatLatestNewsAnswer(sqlResult)
+    const listAnswer = sqlMeta === 'select' && !intents.includes('rag')
+      ? formatNewsListAnswer(queryPlan, sqlResult)
       : null;
-    const deterministicAnswer = directAnswer || latestAnswer;
+    const groupAnswer = sqlMeta === 'group' && !intents.includes('rag')
+      ? formatGroupAnswer(queryPlan, sqlResult)
+      : null;
+    const deterministicAnswer = directAnswer || listAnswer || groupAnswer;
     if (deterministicAnswer) {
       emitStep('format_answer', 'Merapikan jawaban dan sumber...');
       await recordExchange({
@@ -382,7 +414,7 @@ export async function handleLLMRequest(
         sqlGenerated,
         sqlResult,
         sources,
-        embeddingDebug,
+        embeddingDebug: { queryPlan, retrieval: embeddingDebug || null },
         latencyMs: Date.now() - t0,
       });
 
@@ -401,6 +433,7 @@ export async function handleLLMRequest(
                   sqlResult,
                   searchInfo: searchInfo || null,
                   sourcesCount: sources.length,
+                  queryPlan,
                   embeddingDebug: embeddingDebug || null,
                   latencyMs: Date.now() - t0,
                 },
@@ -420,9 +453,15 @@ export async function handleLLMRequest(
       memorySummary: memory.summary,
     });
 
-    const rawAnswer = await callLLM(finalMessages, mode === 'admin' ? 1400 : 650, 0.3, callConfig);
+    let answer: string;
+    try {
+      const rawAnswer = await callLLM(finalMessages, mode === 'admin' ? 1400 : 650, 0.3, callConfig);
+      answer = cleanModelText(rawAnswer, query);
+    } catch (error) {
+      if (sources.length === 0) throw error;
+      answer = formatRagFallbackAnswer(queryPlan, sources);
+    }
     emitStep('format_answer', 'Merapikan jawaban dan sumber...');
-    const answer = cleanModelText(rawAnswer, query);
 
     if (tablePanel?.type === 'rag') {
       const citedSourceIds = getCitationOrder(answer);
@@ -448,7 +487,7 @@ export async function handleLLMRequest(
       sqlGenerated,
       sqlResult,
       sources,
-      embeddingDebug,
+      embeddingDebug: { queryPlan, retrieval: embeddingDebug || null },
       latencyMs: Date.now() - t0,
     });
 
@@ -467,6 +506,7 @@ export async function handleLLMRequest(
                 sqlResult,
                 searchInfo: searchInfo || null,
                 sourcesCount: sources.length,
+                queryPlan,
                 embeddingDebug: embeddingDebug || null,
                 latencyMs: Date.now() - t0,
               },
