@@ -11,7 +11,7 @@ const ALLOWED_COLUMNS = new Set([
   'id', 'title', 'source', 'url', 'category', 'sentiment',
   'primary_kecamatan', 'published_date', 'content_clean', 'created_at',
 ]);
-const ALLOWED_OPS = new Set(['eq', 'ilike', 'is', 'not.is', 'gte', 'lte']);
+const ALLOWED_OPS = new Set(['eq', 'ilike', 'is', 'not.is', 'gte', 'lte', 'in']);
 const PAGE_SIZE = 1000;
 
 export async function GET(request: NextRequest) {
@@ -50,9 +50,11 @@ export async function GET(request: NextRequest) {
         const colName = col.split('.')[0];
         if (!ALLOWED_COLUMNS.has(colName)) continue;
 
-        const parts = opAndVal.split('.');
-        if (parts.length === 2) {
-          const [op, val] = parts;
+        const op = [...ALLOWED_OPS].sort((a, b) => b.length - a.length).find(candidate =>
+          opAndVal.startsWith(`${candidate}.`),
+        );
+        if (op) {
+          const val = opAndVal.slice(op.length + 1);
           if (ALLOWED_OPS.has(op)) {
             if (op === 'eq') q = q.eq(col, val === 'null' ? null : val);
             else if (op === 'ilike') q = q.ilike(col, val);
@@ -60,6 +62,13 @@ export async function GET(request: NextRequest) {
             else if (op === 'not.is') q = q.not(col, 'is', val === 'null' ? null : val);
             else if (op === 'gte') q = q.gte(col, val);
             else if (op === 'lte') q = q.lte(col, val);
+            else if (op === 'in') {
+              const values = JSON.parse(val);
+              if (!Array.isArray(values) || values.length === 0 || values.length > 100 || values.some(item => typeof item !== 'string')) {
+                throw new Error(`filter in tidak valid untuk kolom: ${col}`);
+              }
+              q = q.in(col, values);
+            }
           }
         }
       }
@@ -82,7 +91,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ data, count });
     }
 
-    let allData: any[] = [];
+    let allData: Record<string, unknown>[] = [];
     let page = 0;
 
     while (true) {
@@ -92,14 +101,15 @@ export async function GET(request: NextRequest) {
       q = q.range(start, end);
       const resp = await q;
       if (resp.error) return NextResponse.json({ error: resp.error.message }, { status: 500 });
-      const chunk = resp.data || [];
+      const chunk = (resp.data || []) as unknown as Record<string, unknown>[];
       allData = allData.concat(chunk);
       if (chunk.length < PAGE_SIZE) break;
       page++;
     }
 
     return NextResponse.json({ data: allData, count: allData.length });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'query database gagal';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,8 +1,8 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useCallback } from "react";
-import { Search, ExternalLink, ChevronLeft, ChevronRight, X, ArrowUpDown, ArrowUp, ArrowDown, Calendar } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Search, ExternalLink, ChevronLeft, ChevronRight, ChevronDown, Check, X, ArrowUpDown, ArrowUp, ArrowDown, Calendar } from "lucide-react";
 import AnimatedNumber from "@/frontend/components/AnimatedNumber";
 import KecamatanShapeIcon from "@/frontend/components/KecamatanShapeIcon";
 import { CategoryBadge, SentimentBadge } from "@/frontend/components/NewsBadges";
@@ -14,19 +14,110 @@ interface Article {
   category: string; sentiment: string; primary_kecamatan: string; url: string;
 }
 
+type FilterOptionRow = {
+  source?: string | null;
+  primary_kecamatan?: string | null;
+};
+
 type SortKey = "title" | "source" | "category" | "sentiment" | "primary_kecamatan" | "published_date";
 type SortDir = "asc" | "desc" | null;
+type MultiFilterValue = string[] | null;
 
 const PAGE_OPTIONS = [10, 20, 50, 100, 0] as const; // 0 = all
+const CATEGORY_OPTIONS = ["ekonomi", "sosial", "kesehatan", "pendidikan"];
+const SENTIMENT_OPTIONS = ["positive", "neutral", "negative"];
+
+function MultiSelectFilter({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: MultiFilterValue;
+  onChange: (value: MultiFilterValue) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = value === null ? options : value;
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, []);
+
+  const toggleOption = (option: string) => {
+    const nextSet = new Set(selected);
+    if (nextSet.has(option)) nextSet.delete(option);
+    else nextSet.add(option);
+    const next = options.filter(item => nextSet.has(item));
+    onChange(next.length === options.length ? null : next);
+  };
+
+  const buttonLabel = value === null
+    ? `Semua ${label}`
+    : value.length === 0
+      ? `${label}: 0`
+      : value.length === 1
+        ? value[0]
+        : `${label}: ${value.length}`;
+
+  return (
+    <div ref={rootRef} className="relative w-full sm:w-auto">
+      <button type="button" onClick={() => setOpen(current => !current)} aria-expanded={open}
+        className="flex w-full min-w-[150px] items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm capitalize sm:w-auto"
+        style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
+        <span className="truncate">{buttonLabel}</span>
+        <ChevronDown size={14} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-[calc(100%+0.4rem)] z-[1100] w-full min-w-[220px] overflow-hidden rounded-xl border shadow-xl sm:w-64"
+          style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between gap-2 border-b p-2" style={{ borderColor: "var(--border)" }}>
+            <button type="button" onClick={() => onChange(null)} className="rounded-md px-2 py-1 text-xs font-medium"
+              style={{ color: "var(--accent)" }}>Pilih Semua</button>
+            <button type="button" onClick={() => onChange([])} className="rounded-md px-2 py-1 text-xs"
+              style={{ color: "var(--text-muted)" }}>Hapus Semua</button>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-1.5">
+            {options.map(option => {
+              const checked = selected.includes(option);
+              return (
+                <button key={option} type="button" onClick={() => toggleOption(option)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm capitalize transition-colors hover:bg-[var(--bg-primary)]">
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+                    style={{ backgroundColor: checked ? "var(--accent)" : "transparent", borderColor: checked ? "var(--accent)" : "var(--border)" }}>
+                    {checked && <Check size={11} className="text-white" strokeWidth={3} />}
+                  </span>
+                  <span className="truncate" style={{ color: "var(--text-primary)" }}>{option}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function appendMultiFilter(url: string, column: string, values: MultiFilterValue): string {
+  if (values === null) return url;
+  return `${url}&${column}=in.${encodeURIComponent(JSON.stringify(values))}`;
+}
 
 export default function NewsPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [sentimentFilter, setSentimentFilter] = useState("all");
-  const [kecFilter, setKecFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState<MultiFilterValue>(null);
+  const [categoryFilter, setCategoryFilter] = useState<MultiFilterValue>(null);
+  const [sentimentFilter, setSentimentFilter] = useState<MultiFilterValue>(null);
+  const [kecFilter, setKecFilter] = useState<MultiFilterValue>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
@@ -45,17 +136,23 @@ export default function NewsPage() {
   // Fetch filter options
   useEffect(() => {
     (async () => {
-      const data = await fetch(`${API}&select=source,primary_kecamatan`).then(r => r.json()).then(d => d.data || []);
-      setSources([...new Set<string>(data.map((x: any) => x.source).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
-      setKecs([...new Set<string>(data.map((x: any) => x.primary_kecamatan).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
+      const payload = await fetch(`${API}&select=source,primary_kecamatan`).then(r => r.json()) as { data?: FilterOptionRow[] };
+      const data = payload.data || [];
+      const sourceOptions = data.map(item => item.source).filter((value): value is string => Boolean(value));
+      const kecamatanOptions = data.map(item => item.primary_kecamatan).filter((value): value is string => Boolean(value));
+      setSources([...new Set(sourceOptions)].sort((a, b) => a.localeCompare(b)));
+      setKecs([...new Set(kecamatanOptions)].sort((a, b) => a.localeCompare(b)));
     })();
   }, []);
 
-  // Reset page when filters change
-  useEffect(() => { setPage(1); }, [search, sourceFilter, categoryFilter, sentimentFilter, kecFilter, dateFrom, dateTo, pageSize, sortKey, sortDir]);
-
   const fetchArticles = useCallback(async () => {
     setLoading(true);
+    if ([sourceFilter, categoryFilter, sentimentFilter, kecFilter].some(value => Array.isArray(value) && value.length === 0)) {
+      setArticles([]);
+      setTotalFiltered(0);
+      setLoading(false);
+      return;
+    }
     const select = `id,title,source,published_date,category,sentiment,primary_kecamatan,url`;
     const limit = pageSize === 0 ? 999999 : pageSize;
     const offset = pageSize === 0 ? 0 : (page - 1) * pageSize;
@@ -66,10 +163,10 @@ export default function NewsPage() {
       const words = search.trim().split(/\s+/).filter(Boolean);
       if (words.length > 0) url += `&title=ilike.%25${encodeURIComponent(words.join('%25'))}%25`;
     }
-    if (sourceFilter !== "all") url += `&source=eq.${encodeURIComponent(sourceFilter)}`;
-    if (categoryFilter !== "all") url += `&category=eq.${categoryFilter === "null" ? "null" : encodeURIComponent(categoryFilter)}`;
-    if (sentimentFilter !== "all") url += `&sentiment=eq.${encodeURIComponent(sentimentFilter)}`;
-    if (kecFilter !== "all") url += `&primary_kecamatan=eq.${encodeURIComponent(kecFilter)}`;
+    url = appendMultiFilter(url, "source", sourceFilter);
+    url = appendMultiFilter(url, "category", categoryFilter);
+    url = appendMultiFilter(url, "sentiment", sentimentFilter);
+    url = appendMultiFilter(url, "primary_kecamatan", kecFilter);
     if (dateFrom) url += `&published_date=gte.${dateFrom}`;
     if (dateTo) url += `&published_date=lte.${dateTo}`;
 
@@ -81,12 +178,16 @@ export default function NewsPage() {
     setLoading(false);
   }, [search, sourceFilter, categoryFilter, sentimentFilter, kecFilter, dateFrom, dateTo, page, pageSize, sortKey, sortDir]);
 
-  useEffect(() => { fetchArticles(); }, [fetchArticles]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void fetchArticles(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [fetchArticles]);
 
   const effectiveLimit = pageSize === 0 ? totalFiltered : pageSize;
   const totalPages = Math.max(1, Math.ceil(totalFiltered / effectiveLimit));
 
   const handleSort = (key: SortKey) => {
+    setPage(1);
     if (sortKey === key) {
       if (sortDir === "asc") setSortDir("desc");
       else if (sortDir === "desc") { setSortDir(null); setSortKey("published_date"); }
@@ -130,40 +231,22 @@ export default function NewsPage() {
         <div className="relative w-full sm:flex-1 sm:min-w-[180px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }} />
           <input type="text" placeholder="Cari judul..." value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
             className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2"
             style={{ color: "var(--text-primary)", borderColor: "var(--border)", backgroundColor: "var(--bg-primary)" }} />
         </div>
-        <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}
-          className="px-3 py-2 text-sm rounded-lg border" style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
-          <option value="all">Semua Sumber</option>
-          {sources.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
-          className="px-3 py-2 text-sm rounded-lg border" style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
-          <option value="all">Semua Kategori</option>
-          {["ekonomi", "sosial", "kesehatan", "pendidikan", "null"].sort().map(item => (
-            <option key={item} value={item}>{item === "null" ? "Tidak Dikategorikan" : item}</option>
-          ))}
-        </select>
-        <select value={sentimentFilter} onChange={e => setSentimentFilter(e.target.value)}
-          className="px-3 py-2 text-sm rounded-lg border" style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
-          <option value="all">Semua Sentimen</option>
-          {["positive", "neutral", "negative"].sort().map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={kecFilter} onChange={e => setKecFilter(e.target.value)}
-          className="px-3 py-2 text-sm rounded-lg border" style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
-          <option value="all">Semua Kecamatan</option>
-          {kecs.map(k => <option key={k} value={k}>{k}</option>)}
-        </select>
+        <MultiSelectFilter label="Sumber" options={sources} value={sourceFilter} onChange={value => { setSourceFilter(value); setPage(1); }} />
+        <MultiSelectFilter label="Kategori" options={CATEGORY_OPTIONS} value={categoryFilter} onChange={value => { setCategoryFilter(value); setPage(1); }} />
+        <MultiSelectFilter label="Sentimen" options={SENTIMENT_OPTIONS} value={sentimentFilter} onChange={value => { setSentimentFilter(value); setPage(1); }} />
+        <MultiSelectFilter label="Kecamatan" options={kecs} value={kecFilter} onChange={value => { setKecFilter(value); setPage(1); }} />
 
         {/* Date range — 1 compact component */}
         <div className="flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm" style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
           <Calendar size={14} style={{ color: "var(--text-muted)" }} />
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
             className="bg-transparent border-none outline-none text-xs" style={{ color: "var(--text-primary)" }} />
           <span style={{ color: "var(--text-muted)" }}>—</span>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
             className="bg-transparent border-none outline-none text-xs" style={{ color: "var(--text-primary)" }} />
         </div>
       </div>
@@ -204,8 +287,8 @@ export default function NewsPage() {
               <tbody>
                 {articles.map(a => (
                   <tr key={a.id} className="border-b cursor-pointer transition-colors" style={{ borderColor: "var(--border)" }}
-                    onMouseEnter={e => (e.currentTarget as any).style.backgroundColor = "var(--bg-primary)"}
-                    onMouseLeave={e => (e.currentTarget as any).style.backgroundColor = "transparent"}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "var(--bg-primary)"}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                     onClick={() => setDetail(a)}>
                     <td className="p-3 font-medium truncate" style={{ color: "var(--text-primary)" }} title={a.title}>{a.title}</td>
                     <td className="p-3" style={{ color: "var(--text-secondary)" }}>{a.source}</td>
