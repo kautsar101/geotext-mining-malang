@@ -1,6 +1,7 @@
 import { supabase } from '@/backend/db/supabase';
 import { callLLM, type LLMCallConfig } from './providers';
 import { normalizeQueryText, sanitizeInput } from './guardrails';
+import { isLatestNewsQuery } from './router';
 
 type QueryBuilder = {
   eq: (column: string, value: unknown) => QueryBuilder;
@@ -59,6 +60,10 @@ function buildDeterministicSQL(query: string): string | null {
   const lowered = normalizeQueryText(query);
   const where = buildWhereFromQuery(query);
   const asksCount = /\b(berapa|jumlah|total)\b/i.test(lowered);
+
+  if (isLatestNewsQuery(query) && !asksCount) {
+    return `SELECT id, title, url, content_clean, source, published_date, primary_kecamatan, category, sentiment FROM clean_news_articles${where} ORDER BY published_date DESC LIMIT 10`;
+  }
 
   if (asksCount) {
     return `SELECT COUNT(*) FROM clean_news_articles${where}`;
@@ -244,7 +249,7 @@ export async function executeSQL(rawSql: string): Promise<{ data: Record<string,
     return { data: await groupCount(groupMatch[1], groupMatch[2], extractWhere(sql)), meta: 'group' };
   }
 
-  const selectMatch = sql.match(/SELECT\s+(.+?)\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+))?(?:\s+ORDER\s+BY\s+(.+))?(?:\s+LIMIT\s+(\d+))?/i);
+  const selectMatch = sql.match(/^SELECT\s+(.+?)\s+FROM\s+clean_news_articles(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?\s*$/i);
   if (selectMatch) {
     const fields = selectMatch[1].split(',').map((f) => f.trim());
     let q = supabase.from('clean_news_articles').select(fields.join(','), { count: 'exact', head: false }) as unknown as QueryBuilder;

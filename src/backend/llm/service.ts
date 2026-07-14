@@ -10,7 +10,7 @@ import {
 import { getSessionMemory, recordExchange } from './memory';
 import { buildFinalMessages } from './prompts';
 import { callLLM, type LLMCallConfig } from './providers';
-import { classifyIntents } from './router';
+import { classifyIntents, isLatestNewsQuery } from './router';
 import { executeSQL, generateSQL, validateSQL } from './sql';
 import { parseRetrievalQuery, retrieveSources } from './retriever';
 import type { LLMIntent, LLMProcessStep, LLMProcessStepId, Source } from './types';
@@ -124,6 +124,29 @@ function formatDirectCountAnswer(query: string, sqlResult: unknown): string | nu
   }
 
   return `Ada ${count} ${subject}${location}.`;
+}
+
+function formatLatestNewsAnswer(sqlResult: unknown): string | null {
+  if (!Array.isArray(sqlResult)) return null;
+  if (sqlResult.length === 0) return 'Belum ada berita yang tersedia dalam database.';
+
+  const rows = sqlResult as Record<string, unknown>[];
+  const items = rows.slice(0, 10).map((row, index) => {
+    const title = String(row.title || 'Berita tanpa judul').trim();
+    const content = String(row.content_clean || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 220);
+    const details = [
+      row.published_date ? `Tanggal: ${String(row.published_date).slice(0, 10)}` : '',
+      row.primary_kecamatan ? `Kecamatan: ${String(row.primary_kecamatan)}` : '',
+      row.source ? `Sumber: ${String(row.source)}` : '',
+    ].filter(Boolean).join(' | ');
+    const summary = content ? ` ${content}${content.endsWith('.') ? '' : '.'}` : '';
+    return `${index + 1}. **${title}**.${summary}${details ? ` ${details}.` : ''} [${index + 1}]`;
+  });
+
+  return `Berikut berita terbaru yang tersedia dalam database:\n\n${items.join('\n\n')}`;
 }
 
 function getCitationOrder(answer: string): number[] {
@@ -335,13 +358,17 @@ export async function handleLLMRequest(
     const directAnswer = sqlMeta === 'count' && !intents.includes('rag')
       ? formatDirectCountAnswer(contextualQuery, sqlResult)
       : null;
-    if (directAnswer) {
+    const latestAnswer = sqlMeta === 'select' && isLatestNewsQuery(contextualQuery) && !intents.includes('rag')
+      ? formatLatestNewsAnswer(sqlResult)
+      : null;
+    const deterministicAnswer = directAnswer || latestAnswer;
+    if (deterministicAnswer) {
       emitStep('format_answer', 'Merapikan jawaban dan sumber...');
       await recordExchange({
         sessionId: sid,
         query,
         route: routeForLog,
-        response: directAnswer,
+        response: deterministicAnswer,
         sqlGenerated,
         sqlResult,
         sources,
@@ -351,7 +378,7 @@ export async function handleLLMRequest(
 
       return {
         body: {
-          response: directAnswer,
+          response: deterministicAnswer,
           sources,
           tablePanel,
           processSteps,
