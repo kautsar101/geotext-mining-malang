@@ -10,7 +10,7 @@ import {
 import { getSessionMemory, recordExchange } from './memory';
 import { buildFinalMessages } from './prompts';
 import { callLLM, type LLMCallConfig } from './providers';
-import { classifyIntents, isLatestNewsQuery } from './router';
+import { classifyIntents, type QueryPlan } from './router';
 import { executeSQL, generateSQL, validateSQL } from './sql';
 import { parseRetrievalQuery, retrieveSources } from './retriever';
 import type { LLMIntent, LLMProcessStep, LLMProcessStepId, Source } from './types';
@@ -246,10 +246,18 @@ export async function handleLLMRequest(
     }
 
     let intents: LLMIntent[] = ['chat'];
+    let queryPlan: QueryPlan = {
+      capabilities: ['general_chat'],
+      intents: ['chat'],
+      filters: { topic: [], kecamatan: null, kategori: null, sentimen: null },
+      temporal: { kind: 'none' },
+      confidence: 1,
+    };
     if (!isGreetingOnly(query)) {
       emitStep('classify_request', 'Menentukan informasi yang diperlukan...');
-      const routed = await classifyIntents(contextualQuery);
+      const routed = await classifyIntents(contextualQuery, callConfig);
       intents = routed.intents;
+      queryPlan = routed.plan;
     }
 
     if (!intents.includes('chat')) intents.push('chat');
@@ -282,7 +290,9 @@ export async function handleLLMRequest(
 
     if (intents.includes('sql')) {
       emitStep('analyze_data', 'Menentukan data yang perlu dihitung...');
-      sqlGenerated = await generateSQL(contextualQuery, callConfig);
+      sqlGenerated = await generateSQL(contextualQuery, callConfig, {
+        latest: queryPlan.temporal.kind !== 'none',
+      });
       emitStep('validate_query', 'Memeriksa kebutuhan data...');
       if (validateSQL(sqlGenerated)) {
         emitStep('query_database', 'Mengambil data dari database...');
@@ -358,7 +368,7 @@ export async function handleLLMRequest(
     const directAnswer = sqlMeta === 'count' && !intents.includes('rag')
       ? formatDirectCountAnswer(contextualQuery, sqlResult)
       : null;
-    const latestAnswer = sqlMeta === 'select' && isLatestNewsQuery(contextualQuery) && !intents.includes('rag')
+    const latestAnswer = sqlMeta === 'select' && queryPlan.temporal.kind !== 'none' && !intents.includes('rag')
       ? formatLatestNewsAnswer(sqlResult)
       : null;
     const deterministicAnswer = directAnswer || latestAnswer;

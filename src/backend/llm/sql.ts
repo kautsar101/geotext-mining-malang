@@ -56,12 +56,12 @@ function buildWhereFromQuery(query: string): string {
   return filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : '';
 }
 
-function buildDeterministicSQL(query: string): string | null {
+function buildDeterministicSQL(query: string, forceLatest = false): string | null {
   const lowered = normalizeQueryText(query);
   const where = buildWhereFromQuery(query);
   const asksCount = /\b(berapa|jumlah|total)\b/i.test(lowered);
 
-  if (isLatestNewsQuery(query) && !asksCount) {
+  if ((forceLatest || isLatestNewsQuery(query)) && !asksCount) {
     return `SELECT id, title, url, content_clean, source, published_date, primary_kecamatan, category, sentiment FROM clean_news_articles${where} ORDER BY published_date DESC LIMIT 10`;
   }
 
@@ -114,9 +114,13 @@ function extractSelectStatement(raw: string): string {
   return sqlLines.join(' ').replace(/\s+/g, ' ').trim();
 }
 
-export async function generateSQL(query: string, callConfig?: LLMCallConfig): Promise<string> {
+export async function generateSQL(
+  query: string,
+  callConfig?: LLMCallConfig,
+  options: { latest?: boolean } = {},
+): Promise<string> {
   const safeQuery = sanitizeInput(query);
-  const deterministicSQL = buildDeterministicSQL(safeQuery);
+  const deterministicSQL = buildDeterministicSQL(safeQuery, options.latest === true);
   if (deterministicSQL) return deterministicSQL;
 
   const prompt = `Anda adalah generator SQL yang aman. Tugas Anda hanya membuat SELECT query.
