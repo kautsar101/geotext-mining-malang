@@ -1,7 +1,7 @@
 import { supabase } from '@/backend/db/supabase';
 import { generateEmbedding } from './providers';
 import { normalizeQueryText, sanitizeInput } from './guardrails';
-import type { Source } from './types';
+import type { LLMProcessStepId, Source } from './types';
 
 const KECAMATAN = [
   'Ampelgading', 'Bantur', 'Bululawang', 'Dampit', 'Dau', 'Donomulyo', 'Gedangan',
@@ -15,6 +15,7 @@ const KECAMATAN = [
 const VALID_KATEGORI = ['kesehatan', 'pendidikan', 'ekonomi', 'sosial'];
 const VALID_SENTIMEN = ['positive', 'negative', 'neutral'];
 const RAG_TOP_K = 10;
+const EMBEDDING_TIMEOUT_MS = 30_000;
 const KEYWORD_STOPWORDS = [
   'carikan', 'cari', 'berita', 'artikel', 'tentang', 'kabupaten', 'malang',
   'kecamatan', 'saya', 'tolong', 'yang', 'dan', 'atau', 'dengan', 'untuk',
@@ -25,12 +26,15 @@ type ParsedQuery = {
   kecamatan: string | null;
   kategori: string | null;
   sentimen: string | null;
+  dateFrom: string | null;
+  dateTo: string | null;
   keywords: string[];
 };
 
 type RawSource = {
   id?: number;
   article_id?: number;
+  chunk_index?: number;
   title?: string;
   chunk_text?: string;
   content_clean?: string;
@@ -42,6 +46,25 @@ type RawSource = {
   url?: string;
   similarity?: number;
 };
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Embedding timeout setelah ${timeoutMs / 1000} detik`));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
 
 function canonicalKecamatan(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -104,63 +127,118 @@ export async function parseRetrievalQuery(
     kecamatan: canonicalKecamatan(kecamatan),
     kategori,
     sentimen,
+    dateFrom: null,
+    dateTo: null,
     keywords: keywords.length > 0 ? keywords : lowered.split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8),
   };
 }
 
+function withinDateRange(source: RawSource, dateFrom: string | null, dateTo: string | null): boolean {
+  const date = source.published_date;
+  if (!date) return !dateFrom && !dateTo;
+  if (dateFrom && date < dateFrom) return false;
+  if (dateTo && date >= dateTo) return false;
+  return true;
+}
+
 export async function retrieveSources(
   queryText: string,
-  filters: Pick<ParsedQuery, 'kecamatan' | 'kategori' | 'sentimen'>,
+  filters: Pick<ParsedQuery, 'kecamatan' | 'kategori' | 'sentimen' | 'dateFrom' | 'dateTo'>,
   topK = RAG_TOP_K,
-): Promise<{ sources: Source[]; searchInfo: string }> {
+  includeVector = false,
+  onProgress?: (id: LLMProcessStepId, label: string) => void,
+): Promise<{ sources: Source[]; searchInfo: string; embeddingDebug: EmbeddingDebug }> {
   const allSources: RawSource[] = [];
   const searchSteps: string[] = [];
-  const seen = new Set<number>();
-
-  function dedup(items: RawSource[]): RawSource[] {
-    return items.filter((r) => {
-      const key = r.article_id || r.id;
-      if (typeof key !== 'number' || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
+  const candidateLimit = Math.max(topK * (filters.dateFrom || filters.dateTo ? 8 : 3), 30);
+  const embeddingDebug: EmbeddingDebug = {
+    status: 'unavailable',
+    model: 'intfloat/multilingual-e5-large',
+    prefix: 'query:',
+    dimensions: 1024,
+    normalized: true,
+    queryText,
+    candidateLimit,
+    topKRequested: topK,
+    matchThreshold: 0.35,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    matches: [],
+  };
 
   try {
-    const embedding = await generateEmbedding();
-    if (embedding && embedding.length > 0) {
-      const { data } = await supabase.rpc('match_news_embeddings', {
-        query_embedding: embedding,
+    onProgress?.('match_documents', 'Membandingkan pertanyaan dengan isi berita...');
+    // Jangan biarkan cold start model embedding memutus seluruh request LLM.
+    const embedding = await withTimeout(generateEmbedding(queryText), EMBEDDING_TIMEOUT_MS);
+    if (embedding) {
+      let rpcResult = await supabase.rpc('match_news_embeddings', {
+        query_embedding: embedding.vector,
         match_threshold: 0.35,
-        match_count: topK,
+        match_count: candidateLimit,
         filter_kecamatan: filters.kecamatan || null,
         filter_kategori: filters.kategori || null,
         filter_sentimen: filters.sentimen || null,
+        filter_date_from: filters.dateFrom || null,
+        filter_date_to: filters.dateTo || null,
       });
+
+      // Keep production functional until the date-aware RPC migration is applied.
+      if (rpcResult.error) {
+        rpcResult = await supabase.rpc('match_news_embeddings', {
+          query_embedding: embedding.vector,
+          match_threshold: 0.35,
+          match_count: candidateLimit,
+          filter_kecamatan: filters.kecamatan || null,
+          filter_kategori: filters.kategori || null,
+          filter_sentimen: filters.sentimen || null,
+        });
+      }
+
+      const data = (rpcResult.data as RawSource[] | null)?.filter((source) =>
+        withinDateRange(source, filters.dateFrom, filters.dateTo),
+      );
+      embeddingDebug.status = 'success';
+      embeddingDebug.rawMatchCount = data?.length || 0;
+      if (includeVector) embeddingDebug.queryVector = embedding.vector;
       if (data && data.length > 0) {
-        allSources.push(...dedup(data as RawSource[]));
+        allSources.push(...data as RawSource[]);
         searchSteps.push('semantic');
       }
     }
-  } catch {
-    // Keyword fallback below keeps non-embedding providers usable.
+  } catch (error) {
+    embeddingDebug.status = 'error';
+    embeddingDebug.error = error instanceof Error
+      ? `${error.message}; fallback ke keyword search`
+      : 'Embedding search gagal; fallback ke keyword search';
+    onProgress?.('fallback_search', 'Menyesuaikan pencarian berdasarkan detail pertanyaan...');
   }
 
   const keywords = normalizeQueryText(queryText).split(/\s+/).map(cleanSearchTerm).filter((w) => w.length > 2).slice(0, 8);
-  const searchTerms = expandSearchTerms(keywords.length > 0 ? keywords : [cleanSearchTerm(queryText)]);
+  // Location/category/sentiment are already enforced by RPC filters. They must
+  // not receive another relevance boost and drown out the actual topic.
+  const filterTokens = new Set(
+    [filters.kecamatan, filters.kategori, filters.sentimen]
+      .filter(Boolean)
+      .flatMap((value) => normalizeQueryText(value as string).split(/\s+/))
+      .map(cleanSearchTerm),
+  );
+  const topicKeywords = keywords.filter((keyword) => !filterTokens.has(keyword));
+  const searchTerms = expandSearchTerms(topicKeywords);
 
   if (searchTerms[0]) {
     let q = supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
-      .limit(topK);
+      .limit(candidateLimit);
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
+    if (filters.dateFrom) q = q.gte('published_date', filters.dateFrom);
+    if (filters.dateTo) q = q.lt('published_date', filters.dateTo);
     q = q.or(searchTerms.flatMap((k) => [`title.ilike.%${k}%`, `content_clean.ilike.%${k}%`]).join(','));
 
     const { data } = await q;
     if (data && data.length > 0) {
-      allSources.push(...dedup(data as RawSource[]));
+      allSources.push(...data as RawSource[]);
       searchSteps.push('keyword');
     }
   }
@@ -169,46 +247,113 @@ export async function retrieveSources(
     let q = supabase.from('clean_news_articles')
       .select('id, title, content_clean, source, published_date, primary_kecamatan, category, sentiment, url')
       .order('published_date', { ascending: false })
-      .limit(topK);
+      .limit(candidateLimit);
     if (filters.kecamatan) q = q.eq('primary_kecamatan', filters.kecamatan);
     if (filters.kategori) q = q.eq('category', filters.kategori);
     if (filters.sentimen) q = q.eq('sentiment', filters.sentimen);
+    if (filters.dateFrom) q = q.gte('published_date', filters.dateFrom);
+    if (filters.dateTo) q = q.lt('published_date', filters.dateTo);
 
     const { data } = await q;
     if (data && data.length > 0) {
-      allSources.push(...dedup(data as RawSource[]));
+      allSources.push(...data as RawSource[]);
       searchSteps.push('filter');
     }
   }
 
-  const rankedSources = [...allSources]
-    .sort((a, b) => sourceRelevanceScore(b, keywords, searchTerms) - sourceRelevanceScore(a, keywords, searchTerms));
+  const rankedChunks = [...allSources]
+    .map((source) => ({ source, score: sourceRelevanceScore(source, topicKeywords, searchTerms) }))
+    .sort((a, b) => b.score - a.score);
+  const articleGroups = new Map<string, { chunks: Array<{ source: RawSource; score: number }>; bestScore: number }>();
 
-  const sources = rankedSources.slice(0, topK).map((r, i) => ({
+  for (const candidate of rankedChunks) {
+    const articleKey = candidate.source.article_id ?? candidate.source.id;
+    if (typeof articleKey !== 'number') continue;
+    const key = String(articleKey);
+    const group = articleGroups.get(key) || { chunks: [], bestScore: candidate.score };
+    group.chunks.push(candidate);
+    group.bestScore = Math.max(group.bestScore, candidate.score);
+    articleGroups.set(key, group);
+  }
+
+  const chunksPerArticle = topK >= 20 ? 3 : 2;
+  const rankedArticles = [...articleGroups.values()]
+    .sort((a, b) => b.bestScore - a.bestScore)
+    .slice(0, topK);
+
+  onProgress?.('select_documents', 'Memilih berita yang paling relevan...');
+
+  const sources = rankedArticles.map((group, i) => {
+    const rankedGroupChunks = group.chunks.sort((a, b) => b.score - a.score);
+    const bestChunk = rankedGroupChunks[0]?.source || {};
+    const selectedChunks = rankedGroupChunks
+      .slice(0, chunksPerArticle)
+      .sort((a, b) => (a.source.chunk_index ?? 0) - (b.source.chunk_index ?? 0));
+    const articleId = bestChunk.article_id ?? bestChunk.id;
+
+    return {
     id: i + 1,
-    title: r.title,
-    snippet: String(r.chunk_text || r.content_clean || '').slice(0, 420),
-    source: r.source,
-    date: r.published_date,
-    kecamatan: r.primary_kecamatan,
-    category: r.category,
-    sentiment: r.sentiment,
-    url: r.url,
-    similarity: r.similarity ? Math.round(r.similarity * 100) : undefined,
+      articleId: typeof articleId === 'number' ? articleId : undefined,
+      chunkIndices: selectedChunks.map(({ source }) => source.chunk_index).filter((value): value is number => typeof value === 'number'),
+      title: bestChunk.title,
+      snippet: selectedChunks
+        .map(({ source }) => String(source.chunk_text || source.content_clean || '').slice(0, 700))
+        .filter(Boolean)
+        .join('\n\n'),
+      source: bestChunk.source,
+      date: bestChunk.published_date,
+      kecamatan: bestChunk.primary_kecamatan,
+      category: bestChunk.category,
+      sentiment: bestChunk.sentiment,
+      url: bestChunk.url,
+      similarity: bestChunk.similarity ? Math.round(bestChunk.similarity * 100) : undefined,
+    };
+  });
+
+  embeddingDebug.selectedArticleCount = sources.length;
+  embeddingDebug.matches = sources.map((source) => ({
+    rank: source.id,
+    articleId: source.articleId,
+    chunkIndices: source.chunkIndices,
+    similarity: source.similarity,
+    title: source.title,
+    primaryKecamatan: source.kecamatan,
+    category: source.category,
+    sentiment: source.sentiment,
   }));
 
   return {
     sources,
     searchInfo: searchSteps.length > 0 ? `Pencarian: ${searchSteps.join(' -> ')}` : 'Tidak ada hasil',
+    embeddingDebug,
   };
 }
+
+export type EmbeddingDebug = {
+  status: 'success' | 'unavailable' | 'error';
+  model: string;
+  prefix: 'query:';
+  dimensions: 1024;
+  normalized: true;
+  queryText: string;
+  candidateLimit: number;
+  topKRequested: number;
+  matchThreshold: number;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  rawMatchCount?: number;
+  selectedArticleCount?: number;
+  queryVector?: number[];
+  matches: Array<Record<string, unknown>>;
+  error?: string;
+};
 
 export function formatSourcesForPrompt(sources: Source[]): string {
   if (sources.length === 0) return 'Tidak ada berita terkait di database.';
 
   return sources.map((s) =>
     `[${s.id}] Judul: ${s.title || '-'}\n` +
-    `Sumber: ${s.source || '-'} | URL: ${s.url || '-'} | Kecamatan: ${s.kecamatan || '-'} | ` +
+    `Sumber: ${s.source || '-'} | Kecamatan: ${s.kecamatan || '-'} | ` +
     `Tanggal: ${s.date || '-'} | Kategori: ${s.category || '-'} | Sentimen: ${s.sentiment || '-'}\n` +
     `Cuplikan: ${s.snippet || '-'}`,
   ).join('\n\n');

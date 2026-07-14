@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ADMIN_SESSION_COOKIE, getAdminSession } from '@/backend/auth/admin';
 import { genSessionId, handleLLMRequest } from '@/backend/llm/service';
 import type { LLMProcessStep } from '@/backend/llm/types';
+
+export const runtime = 'nodejs';
 
 function encodeSSE(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -12,8 +13,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const adminSession = await getAdminSession(request.cookies.get(ADMIN_SESSION_COOKIE)?.value);
-    const mode = adminSession ? 'admin' : 'guest';
+    // DeepSeek is the default server-side mode; no provider or API key is exposed to users.
+    const mode = 'admin' as const;
 
     if (body?.stream === true) {
       const encoder = new TextEncoder();

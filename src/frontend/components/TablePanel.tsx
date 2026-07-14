@@ -13,6 +13,7 @@ interface TablePanelProps {
 
 export default function TablePanel({ data, onClose }: TablePanelProps) {
   const [titleWidth, setTitleWidth] = useState(250);
+  const [visibleRows, setVisibleRows] = useState(0);
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, w: 0 });
 
@@ -45,6 +46,23 @@ export default function TablePanel({ data, onClose }: TablePanelProps) {
       dragging.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    setVisibleRows(0);
+    if (data.rows.length === 0) return;
+
+    const timer = window.setInterval(() => {
+      setVisibleRows((current) => {
+        if (current >= data.rows.length) {
+          window.clearInterval(timer);
+          return current;
+        }
+        return current + 1;
+      });
+    }, 55);
+
+    return () => window.clearInterval(timer);
+  }, [data.rows]);
 
   return (
     <div
@@ -122,10 +140,10 @@ export default function TablePanel({ data, onClose }: TablePanelProps) {
                 </td>
               </tr>
             ) : (
-              data.rows.map((row, i) => (
+              data.rows.slice(0, visibleRows).map((row, i) => (
                 <tr
                   key={i}
-                  className="border-b last:border-b-0"
+                  className="animate-fade-in border-b last:border-b-0"
                   style={{ borderColor: "var(--border)" }}
                 >
                   <td className="px-2 py-2 text-center align-top text-[10px] font-semibold" style={{ color: "var(--accent)" }}>

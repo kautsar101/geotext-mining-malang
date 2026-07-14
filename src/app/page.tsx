@@ -11,6 +11,10 @@ import {
   ChevronLeft, ChevronRight, ExternalLink,
   ArrowUpRight, ArrowDownRight, Activity, FileText
 } from "lucide-react";
+import AnimatedNumber from "@/frontend/components/AnimatedNumber";
+import ViewportChart from "@/frontend/components/ViewportChart";
+import KecamatanShapeIcon from "@/frontend/components/KecamatanShapeIcon";
+import { CategoryBadge, SentimentBadge } from "@/frontend/components/NewsBadges";
 
 const API = "/api/db?table=clean_news_articles";
 function fetcher(params: string) {
@@ -44,6 +48,73 @@ function fmtDateFull(d: string) {
   return `${String(date.getDate()).padStart(2,'0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+type LatestNewsItem = {
+  title?: string;
+  url?: string;
+  content_clean?: string;
+  source?: string;
+  category?: string;
+  sentiment?: string;
+  published_date?: string;
+  primary_kecamatan?: string;
+};
+
+function LatestNewsTable({ news }: { news: LatestNewsItem[] }) {
+  return (
+    <div className="rounded-2xl border p-5 shadow-sm" style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border)" }}>
+      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+        <FileText size={16} />10 Berita Terbaru
+      </h3>
+      <div className="flex flex-col gap-2 sm:hidden">
+        {news.map((item, index) => (
+          <div key={`${item.url || item.title}-${index}`} className="rounded-xl border px-3 py-3" style={{ backgroundColor: "var(--bg-primary)", borderColor: "var(--border)" }}>
+            <a href={item.url} target="_blank" rel="noopener noreferrer" className="mb-2 block text-sm font-medium leading-snug hover:underline" style={{ color: "var(--text-primary)" }}>
+              {item.title}
+            </a>
+            {item.content_clean && <p className="mb-2 line-clamp-2 text-[11px]" style={{ color: "var(--text-muted)" }}>{item.content_clean.slice(0, 120)}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="flex items-center gap-1 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                <KecamatanShapeIcon name={item.primary_kecamatan} />{item.primary_kecamatan || "-"}
+              </span>
+              <CategoryBadge category={item.category} />
+              <SentimentBadge sentiment={item.sentiment} />
+              <span className="ml-auto text-[10px]" style={{ color: "var(--text-muted)" }}>{item.published_date?.slice(0, 10)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto sm:block">
+        <table className="w-full text-xs" style={{ color: "var(--text-secondary)" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid var(--border)" }}>
+              <th className="px-2 py-2 text-left font-semibold" style={{ color: "var(--text-muted)" }}>Judul</th>
+              <th className="hidden px-2 py-2 text-left font-semibold md:table-cell" style={{ color: "var(--text-muted)" }}>Isi</th>
+              <th className="hidden px-2 py-2 text-left font-semibold sm:table-cell" style={{ color: "var(--text-muted)" }}>Sumber</th>
+              <th className="hidden px-2 py-2 text-left font-semibold md:table-cell" style={{ color: "var(--text-muted)" }}>Kecamatan</th>
+              <th className="hidden px-2 py-2 text-left font-semibold sm:table-cell" style={{ color: "var(--text-muted)" }}>Kategori</th>
+              <th className="px-2 py-2 text-center font-semibold" style={{ color: "var(--text-muted)" }}>Sentimen</th>
+              <th className="hidden px-2 py-2 text-right font-semibold sm:table-cell" style={{ color: "var(--text-muted)" }}>Tanggal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {news.map((item, index) => (
+              <tr key={`${item.url || item.title}-${index}`} className="animate-fade-in border-b transition-colors hover:bg-black/5" style={{ borderColor: "var(--border)", animationDelay: `${index * 45}ms` }}>
+                <td className="max-w-[180px] px-2 py-2"><a href={item.url} target="_blank" rel="noopener noreferrer" className="block line-clamp-2 font-medium hover:underline" style={{ color: "var(--text-primary)" }}>{item.title}</a></td>
+                <td className="hidden max-w-[180px] px-2 py-2 text-[10px] md:table-cell" style={{ color: "var(--text-muted)" }}><span className="line-clamp-2">{(item.content_clean || "").slice(0, 120)}</span></td>
+                <td className="hidden px-2 py-2 text-[10px] sm:table-cell">{item.source}</td>
+                <td className="hidden px-2 py-2 md:table-cell"><span className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--text-secondary)" }}><KecamatanShapeIcon name={item.primary_kecamatan} />{item.primary_kecamatan || "-"}</span></td>
+                <td className="hidden px-2 py-2 sm:table-cell"><CategoryBadge category={item.category} /></td>
+                <td className="px-2 py-2 text-center"><SentimentBadge sentiment={item.sentiment} /></td>
+                <td className="hidden px-2 py-2 text-right text-[10px] sm:table-cell" style={{ color: "var(--text-muted)" }}>{item.published_date?.slice(0, 10)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
@@ -58,7 +129,7 @@ export default function Dashboard() {
   const [kecData, setKecData] = useState<any[]>([]);
   const [sentimentData, setSentimentData] = useState<any[]>([]);
   const [dailyData, setDailyData] = useState<any[]>([]);
-  const [latestNews, setLatestNews] = useState<any[]>([]);
+  const [latestNews, setLatestNews] = useState<LatestNewsItem[]>([]);
   const [sourceData, setSourceData] = useState<any[]>([]);
 
   const fetchAll = useCallback(async () => {
@@ -71,8 +142,8 @@ export default function Dashboard() {
       const total = countR.count || 0;
 
       const all = await fetcher("select=source%2Ccategory%2Cprimary_kecamatan%2Cpublished_date%2Csentiment");
-      const newsRaw = await fetcher("select=title%2Csource%2Ccategory%2Csentiment%2Cpublished_date%2Curl%2Ccontent_clean&order=published_date.desc&limit=10");
-      setLatestNews(newsRaw.filter((n: any) => n.title).slice(0, 10));
+      const newsRaw = await fetcher("select=title%2Csource%2Ccategory%2Csentiment%2Cprimary_kecamatan%2Cpublished_date%2Curl%2Ccontent_clean&order=published_date.desc&limit=10");
+      setLatestNews((newsRaw as LatestNewsItem[]).filter((item) => item.title).slice(0, 10));
 
       const catMap: Record<string, number> = {};
       const kecMap: Record<string, number> = {};
@@ -134,6 +205,12 @@ export default function Dashboard() {
   const pRatio = stats.posRatio || 0;
   const cardStyle = { backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 };
   const SENT_COLORS = [cc.c2, cc.c6, cc.c5];
+  const sentimentTotal = sentimentData.reduce((sum, item) => sum + item.value, 0);
+  const dashboardSentimentData = sentimentData.map((item, index) => ({
+    ...item,
+    color: SENT_COLORS[index % SENT_COLORS.length],
+    percent: sentimentTotal > 0 ? (item.value / sentimentTotal) * 100 : 0,
+  }));
   const SOURCE_COLORS = [cc.c2, cc.c3, cc.c4, cc.c5, cc.c6, cc.tm];
   const sourceTotal = sourceData.reduce((s, d) => s + d.value, 0);
   const sourceTop = sourceData.slice(0, 5);
@@ -151,12 +228,6 @@ export default function Dashboard() {
     color: SOURCE_COLORS[i % SOURCE_COLORS.length],
     percent: sourceTotal > 0 ? (d.value / sourceTotal) * 100 : 0,
   }));
-const CAT_COLORS: Record<string, string> = {
-  ekonomi: "text-blue-600 bg-blue-50", sosial: "text-purple-600 bg-purple-50",
-  kesehatan: "text-green-600 bg-green-50", pendidikan: "text-indigo-600 bg-indigo-50",
-};
-const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kesehatan: "🏥", pendidikan: "📚" };
-
   const lineChartId = "dailyTrendGrad";
 
   const CustomTooltip = ({ active, payload }: any) => {
@@ -177,7 +248,8 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="sticky top-[-5rem] z-[1000] -mx-4 flex items-center justify-between pb-4 pl-20 pr-4 pt-1 lg:top-[-2rem] lg:-mx-8 lg:px-8"
+        style={{ background: "linear-gradient(to bottom, var(--bg-primary) 0%, color-mix(in srgb, var(--bg-primary) 98%, transparent) 38%, color-mix(in srgb, var(--bg-primary) 90%, transparent) 60%, color-mix(in srgb, var(--bg-primary) 66%, transparent) 82%, transparent 100%)" }}>
         <div>
           <h2 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>Dashboard</h2>
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Geotext Mining Kabupaten Malang</p>
@@ -225,10 +297,10 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       {/* Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { icon: Newspaper, label: "Total Artikel", value: stats.total?.toLocaleString(), change: "7d", up: true, color: cc.c1 },
-          { icon: Hash, label: "Sumber Berita", value: stats.sources?.toString(), change: `${stats.sources}`, up: true, color: cc.c2 },
-          { icon: MapPin, label: "Kecamatan", value: stats.kecamatan?.toString(), change: "33", up: true, color: cc.c3 },
-          { icon: TrendingUp, label: "Sentimen Positif", value: `${pRatio}%`, change: `${stats.sentimentPos}`, up: pRatio > 50, color: pRatio > 50 ? cc.c2 : cc.c5 },
+          { icon: Newspaper, label: "Total Artikel", value: stats.total || 0, change: "7d", up: true, color: cc.c1 },
+          { icon: Hash, label: "Sumber Berita", value: stats.sources || 0, change: `${stats.sources}`, up: true, color: cc.c2 },
+          { icon: MapPin, label: "Kecamatan", value: stats.kecamatan || 0, change: "33", up: true, color: cc.c3 },
+          { icon: TrendingUp, label: "Sentimen Positif", value: pRatio, suffix: "%", change: `${stats.sentimentPos}`, up: pRatio > 50, color: pRatio > 50 ? cc.c2 : cc.c5 },
         ].map((m, i) => (
           <div key={i} style={cardStyle} className="card-hover">
             <div className="flex items-center justify-between mb-3">
@@ -239,7 +311,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                 7d {m.up ? <ArrowUpRight size={11} className="text-emerald-600" /> : <ArrowDownRight size={11} className="text-rose-600" />}
               </span>
             </div>
-            <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{m.value}</p>
+            <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}><AnimatedNumber value={m.value} suffix={m.suffix} /></p>
             <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{m.label}</p>
           </div>
         ))}
@@ -249,136 +321,47 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sentimen</h3>
-          <ResponsiveContainer width="100%" height={320}>
-            <PieChart>
-              <Pie data={sentimentData} cx="50%" cy="50%" innerRadius={75} outerRadius={115}
-                paddingAngle={4} dataKey="value"
-                label={({ name, value, percent }: any) => `${name}: ${value.toLocaleString()} (${(percent * 100).toFixed(0)}%)`}
-                labelLine={{ stroke: cc.tm, strokeWidth: 0.5, strokeDasharray: "2 2" }}>
-                {sentimentData.map((_, i) => <Cell key={i} fill={SENT_COLORS[i % SENT_COLORS.length]} />)}
-              </Pie>
-              <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
-                <tspan x="50%" dy="-0.4em" fontSize={22} fontWeight={700} fill={cc.ts}>
-                  {sentimentData.reduce((s, d) => s + d.value, 0).toLocaleString()}
-                </tspan>
-                <tspan x="50%" dy="1.4em" fontSize={11} fill={cc.tm}>Total</tspan>
-              </text>
-              <Tooltip
-                formatter={(v: any, name: any) => {
-                  const total = sentimentData.reduce((s, d) => s + d.value, 0);
-                  const pct = total > 0 ? ((v / total) * 100).toFixed(1) : "0";
-                  return [`${v.toLocaleString()} artikel (${pct}%)`, name] as [string, string];
-                }}
-                contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-              <Legend formatter={(v) => <span style={{ color: cc.ts, fontSize: 12 }}>{v}</span>} />
-            </PieChart>
-          </ResponsiveContainer>
+          <div className="grid grid-cols-1 items-center gap-4 md:grid-cols-[minmax(0,1fr)_170px]">
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={270}>
+              <PieChart>
+                <Pie data={dashboardSentimentData} cx="50%" cy="50%" innerRadius={62} outerRadius={110} paddingAngle={3} dataKey="value" isAnimationActive={isVisible}>
+                  {dashboardSentimentData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                </Pie>
+                <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
+                  <tspan x="50%" dy="-0.25em" fontSize={20} fontWeight={700} fill={cc.ts}>{sentimentTotal.toLocaleString()}</tspan>
+                  <tspan x="50%" dy="1.45em" fontSize={10} fill={cc.tm}>Total</tspan>
+                </text>
+                <Tooltip formatter={(value: any, name: any) => {
+                  const percent = sentimentTotal > 0 ? ((Number(value) / sentimentTotal) * 100).toFixed(1) : "0";
+                  return [`${Number(value).toLocaleString()} artikel (${percent}%)`, name] as [string, string];
+                }} contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>}</ViewportChart>
+            <div className="space-y-2.5">
+              {dashboardSentimentData.map((item) => (
+                <div key={item.name} className="rounded-lg px-3 py-2" style={{ backgroundColor: `${item.color}12` }}>
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                    <span className="text-xs font-medium capitalize" style={{ color: "var(--text-primary)" }}>{item.name}</span>
+                  </div>
+                  <p className="mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{item.value.toLocaleString()} artikel · {item.percent.toFixed(1)}%</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Kategori Berita</h3>
-          <ResponsiveContainer width="100%" height={320}>
+          <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={320}>
             <BarChart data={categoryData} layout="vertical" margin={{ left: 10, right: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 10, fill: cc.tm }} />
               <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: cc.ts }} width={80} />
               <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
                 contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={cc.primary} />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={cc.primary} isAnimationActive={isVisible} />
             </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Table: 10 Berita Terbaru */}
-      <div style={cardStyle}>
-        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-          <FileText size={16} />10 Berita Terbaru
-        </h3>
-
-        {/* Mobile: card list */}
-        <div className="flex flex-col gap-2 sm:hidden">
-          {latestNews.map((n: any, i: number) => (
-            <div key={i} className="rounded-xl px-3 py-3" style={{ border: "1px solid var(--border)", backgroundColor: "var(--bg-primary)" }}>
-              <a href={n.url} target="_blank" rel="noopener noreferrer"
-                className="text-sm font-medium leading-snug hover:underline block mb-2"
-                style={{ color: "var(--text-primary)" }}>
-                {n.title}
-              </a>
-              {n.content_clean && (
-                <p className="text-[11px] line-clamp-2 mb-2" style={{ color: "var(--text-muted)" }}>
-                  {(n.content_clean).slice(0, 120)}
-                </p>
-              )}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                  n.sentiment === "positive" ? "bg-emerald-200 text-emerald-900" :
-                  n.sentiment === "negative" ? "bg-red-200 text-red-900" :
-                  "bg-yellow-200 text-yellow-900"
-                }`}>{n.sentiment || "—"}</span>
-                {n.category && CAT_COLORS[n.category] && (
-                  <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${CAT_COLORS[n.category]}`}>
-                    {CAT_ICONS[n.category] || ""} {n.category}
-                  </span>
-                )}
-                <span className="text-[10px] ml-auto" style={{ color: "var(--text-muted)" }}>
-                  {n.source}
-                </span>
-                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                  {n.published_date?.slice(0, 10)}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* sm+: tabel */}
-        <div className="hidden sm:block overflow-x-auto">
-          <table className="w-full text-xs" style={{ color: "var(--text-secondary)" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                <th className="text-left py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Judul</th>
-                <th className="text-left py-2 px-2 font-semibold hidden md:table-cell" style={{ color: "var(--text-muted)" }}>Isi</th>
-                <th className="text-left py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Sumber</th>
-                <th className="text-left py-2 px-2 font-semibold hidden md:table-cell" style={{ color: "var(--text-muted)" }}>Kategori</th>
-                <th className="text-center py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Sentimen</th>
-                <th className="text-right py-2 px-2 font-semibold" style={{ color: "var(--text-muted)" }}>Tanggal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {latestNews.map((n: any, i: number) => (
-                <tr key={i} style={{ borderBottom: "1px solid var(--border)" }} className="hover:bg-black/5 transition-colors">
-                  <td className="py-2 px-2 max-w-[200px]">
-                    <a href={n.url} target="_blank" rel="noopener noreferrer"
-                      className="font-medium hover:underline line-clamp-2 block"
-                      style={{ color: "var(--text-primary)" }}>{n.title}</a>
-                  </td>
-                  <td className="py-2 px-2 text-[10px] hidden md:table-cell max-w-[180px]" style={{ color: "var(--text-muted)" }}>
-                    <span className="line-clamp-2">{(n.content_clean || "").slice(0, 120)}</span>
-                  </td>
-                  <td className="py-2 px-2 text-[10px]">{n.source}</td>
-                  <td className="py-2 px-2 hidden md:table-cell">
-                    {n.category && CAT_COLORS[n.category] ? (
-                      <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-medium ${CAT_COLORS[n.category]}`}>
-                        {CAT_ICONS[n.category] || ""} {n.category}
-                      </span>
-                    ) : (
-                      <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>—</span>
-                    )}
-                  </td>
-                  <td className="py-2 px-2 text-center">
-                    <span className={`inline-block text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
-                      n.sentiment === "positive" ? "bg-emerald-200 text-emerald-900" :
-                      n.sentiment === "negative" ? "bg-red-200 text-red-900" :
-                      "bg-yellow-200 text-yellow-900"
-                    }`}>{n.sentiment || "—"}</span>
-                  </td>
-                  <td className="py-2 px-2 text-right text-[10px]" style={{ color: "var(--text-muted)" }}>
-                    {n.published_date?.slice(0, 10)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          </ResponsiveContainer>}</ViewportChart>
         </div>
       </div>
 
@@ -386,15 +369,24 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
       <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
         <div className="md:col-span-2" style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Kecamatan</h3>
-          <div style={{ height: 400, overflowY: "auto" }}>
-            <ResponsiveContainer width="100%" height={Math.max(400, kecData.length * 28)}>
+          <div style={{ height: 352, overflowY: "auto" }}>
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={Math.max(352, kecData.length * 28)}>
               <BarChart data={kecData} layout="vertical" margin={{ left: 10, right: 10 }} barSize={14}>
                 <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 9, fill: cc.tm }} />
+                <XAxis type="number" domain={[0, "dataMax"]} hide />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 8, fill: cc.ts }} width={75} />
                 <Tooltip formatter={(v: any) => [v.toLocaleString(), "Berita"] as [string, string]}
                   contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.primary} />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.primary} isAnimationActive={isVisible} />
+              </BarChart>
+            </ResponsiveContainer>}</ViewportChart>
+          </div>
+          <div className="pointer-events-none h-12 pt-3" style={{ background: "linear-gradient(to top, var(--bg-card) 48%, color-mix(in srgb, var(--bg-card) 86%, transparent) 76%, transparent 100%)" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={kecData} layout="vertical" margin={{ left: 85, right: 10, top: 0, bottom: 0 }}>
+                <XAxis type="number" domain={[0, "dataMax"]} tickCount={4} tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} />
+                <YAxis type="category" hide />
+                <Bar dataKey="value" fill="transparent" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -410,7 +402,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
             </span>
           </div>
           <div style={{ height: 400 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ViewportChart className="h-full">{(isVisible) => <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={dailyData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
                 <defs>
                   <linearGradient id={lineChartId} x1="0" y1="0" x2="0" y2="1">
@@ -423,22 +415,22 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                 <XAxis dataKey="date" tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} interval="preserveStartEnd" minTickGap={30} />
                 <YAxis tick={{ fontSize: 10, fill: cc.tm }} axisLine={false} tickLine={false} width={35} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: cc.tm, strokeDasharray: "3 3" }} />
-                <Area type="monotone" dataKey="value" stroke={cc.c2} strokeWidth={2.5} fill={`url(#${lineChartId})`} dot={false}
-                  activeDot={{ r: 5, fill: cc.bg, stroke: cc.c2, strokeWidth: 3 }} isAnimationActive={false} />
+                <Area type="monotone" dataKey="value" stroke={cc.c2} strokeWidth={2.5} fill={`url(#${lineChartId})`} dot={false} isAnimationActive={isVisible}
+                  activeDot={{ r: 5, fill: cc.bg, stroke: cc.c2, strokeWidth: 3 }} />
                 <Brush dataKey="date" height={28} stroke={cc.tm} fill={cc.bg} travellerWidth={10} gap={1} style={{ color: cc.ts, fontSize: 9 }}>
                   <AreaChart data={dailyData}>
                     <Area type="monotone" dataKey="value" stroke={cc.c2} fill={cc.c2 + "30"} isAnimationActive={false} />
                   </AreaChart>
                 </Brush>
               </AreaChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer>}</ViewportChart>
           </div>
           <div className="flex items-center justify-between mt-2 px-1">
             <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-              <span className="opacity-50">{dailyData.length} hari total</span>
+              <span className="opacity-50"><AnimatedNumber value={dailyData.length} /> hari total</span>
             </span>
             <span className="text-[10px] font-medium" style={{ color: cc.c2 }}>
-              {dailyData.reduce((sum, d) => sum + d.value, 0).toLocaleString()} total berita
+              <AnimatedNumber value={dailyData.reduce((sum, d) => sum + d.value, 0)} /> total berita
             </span>
           </div>
         </div>
@@ -449,14 +441,23 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Sumber Berita</h3>
           <div style={{ height: 300, overflowY: "auto" }}>
-            <ResponsiveContainer width="100%" height={Math.max(300, sourceData.length * 26)}>
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={Math.max(300, sourceData.length * 26)}>
               <BarChart data={sourceData} layout="vertical" margin={{ left: 10, right: 20 }} barSize={12}>
                 <CartesianGrid strokeDasharray="3 3" stroke={cc.bd} horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 9, fill: cc.tm }} />
+                <XAxis type="number" domain={[0, "dataMax"]} hide />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 8, fill: cc.ts }} width={90} />
                 <Tooltip formatter={(v: any) => [v.toLocaleString(), "Artikel"] as [string, string]}
                   contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12, fontSize: 11 }} />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.secondary} />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} fill={cc.secondary} isAnimationActive={isVisible} />
+              </BarChart>
+            </ResponsiveContainer>}</ViewportChart>
+          </div>
+          <div className="pointer-events-none h-12 pt-3" style={{ background: "linear-gradient(to top, var(--bg-card) 48%, color-mix(in srgb, var(--bg-card) 86%, transparent) 76%, transparent 100%)" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sourceData} layout="vertical" margin={{ left: 100, right: 20, top: 0, bottom: 0 }}>
+                <XAxis type="number" domain={[0, "dataMax"]} tickCount={4} tick={{ fontSize: 9, fill: cc.tm }} axisLine={{ stroke: cc.bd }} tickLine={false} />
+                <YAxis type="category" hide />
+                <Bar dataKey="value" fill="transparent" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -464,16 +465,14 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
         <div style={cardStyle}>
           <h3 className="text-sm font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Proporsi Sumber Berita</h3>
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_180px] gap-4 items-center">
-            <ResponsiveContainer width="100%" height={300}>
+            <ViewportChart>{(isVisible) => <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie data={sourcePieData} cx="50%" cy="50%" innerRadius={55} outerRadius={92}
-                  paddingAngle={3} dataKey="value">
+                  paddingAngle={3} dataKey="value" isAnimationActive={isVisible}>
                   {sourcePieData.map((d) => <Cell key={d.name} fill={d.color} />)}
                 </Pie>
                 <text x="50%" y="48%" textAnchor="middle" dominantBaseline="middle">
-                  <tspan x="50%" dy="0" fontSize={20} fontWeight={700} fill={cc.ts}>
-                    {sourceTotal.toLocaleString()}
-                  </tspan>
+                  <tspan x="50%" dy="0" fontSize={20} fontWeight={700} fill={cc.ts}>{sourceTotal.toLocaleString()}</tspan>
                   <tspan x="50%" dy="1.45em" fontSize={10} fill={cc.tm}>Total</tspan>
                 </text>
                 <Tooltip formatter={(v: unknown, name: unknown) => {
@@ -484,7 +483,7 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
                   }}
                   contentStyle={{ backgroundColor: cc.bg, border: `1px solid ${cc.bd}`, borderRadius: 12 }} />
               </PieChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer>}</ViewportChart>
             <div className="max-h-[260px] overflow-y-auto pr-1 space-y-2">
               {sourcePieData.filter((d) => d.name !== "Lainnya").map((d) => (
                 <div key={d.name} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: `${d.color}12` }}>
@@ -518,6 +517,8 @@ const CAT_ICONS: Record<string, string> = { ekonomi: "💰", sosial: "🤝", kes
           </div>
         </div>
       </div>
+
+      <LatestNewsTable news={latestNews} />
     </div>
   );
 }

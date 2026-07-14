@@ -1,4 +1,5 @@
 import type { ChatMessage } from './types';
+import { generateLocalQueryEmbedding, type QueryEmbedding } from './embedding';
 import {
   classifyProviderFailure,
   getAvailableProviderKeys,
@@ -11,7 +12,10 @@ export type LLMProvider = (typeof LLM_PROVIDERS)[number];
 
 export type LLMCallConfig = {
   provider: LLMProvider;
+  thinking?: 'enabled' | 'disabled';
 };
+
+export type { QueryEmbedding as EmbeddingResult } from './embedding';
 
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_GROQ_MODEL = 'llama-3.1-8b-instant';
@@ -19,7 +23,13 @@ const DEEPSEEK_API = 'https://api.deepseek.com/chat/completions';
 const DEEPSEEK_MODEL = 'deepseek-v4-flash';
 
 type OpenAICompatibleResponse = {
-  choices?: Array<{ message?: { content?: string | null } }>;
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+    };
+    finish_reason?: string | null;
+  }>;
 };
 
 function readError(provider: string, status: number, body: string): Error {
@@ -31,11 +41,16 @@ function providerConfig(provider: LLMProvider) {
   return { api: DEEPSEEK_API, model: DEEPSEEK_MODEL, label: 'DeepSeek' };
 }
 
+export function getLLMModel(provider: LLMProvider): string {
+  return providerConfig(provider).model;
+}
+
 async function callDatabaseKeyPool(
   provider: LLMProvider,
   messages: ChatMessage[],
   maxTokens: number,
   temperature: number,
+  thinking?: LLMCallConfig['thinking'],
 ): Promise<string> {
   const keys = await getAvailableProviderKeys(provider);
   const config = providerConfig(provider);
@@ -57,14 +72,28 @@ async function callDatabaseKeyPool(
         messages,
         max_tokens: maxTokens,
         temperature,
+        ...(provider === 'deepseek' && thinking ? { thinking: { type: thinking } } : {}),
       }),
     });
 
     if (res.ok) {
       const data = await res.json() as OpenAICompatibleResponse;
-      const content = data.choices?.[0]?.message?.content || '';
+      const choice = data.choices?.[0];
+      const finishReason = choice?.finish_reason || 'unknown';
+      const content = choice?.message?.content || '';
+
+      if (finishReason === 'length') {
+        // The key worked; only this generation exhausted its output budget.
+        await markProviderKeySuccess(key.id);
+        throw new Error(`${config.label} output mencapai max_tokens (finish_reason: length)`);
+      }
+
+      if (!content.trim()) {
+        lastError = `${config.label} empty response (${finishReason})`;
+        await markProviderKeyFailure(key, 'server_error', lastError);
+        continue;
+      }
       await markProviderKeySuccess(key.id);
-      if (!content.trim()) throw new Error(`${config.label} empty response`);
       return content;
     }
 
@@ -85,9 +114,15 @@ export async function callLLM(
   temperature = 0.2,
   callConfig: LLMCallConfig = { provider: 'groq' },
 ): Promise<string> {
-  return callDatabaseKeyPool(callConfig.provider, messages, maxTokens, temperature);
+  return callDatabaseKeyPool(
+    callConfig.provider,
+    messages,
+    maxTokens,
+    temperature,
+    callConfig.thinking,
+  );
 }
 
-export async function generateEmbedding(): Promise<number[] | null> {
-  return null;
+export async function generateEmbedding(queryText: string): Promise<QueryEmbedding> {
+  return generateLocalQueryEmbedding(queryText);
 }
