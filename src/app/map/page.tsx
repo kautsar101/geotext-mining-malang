@@ -151,11 +151,13 @@ export default function MapPage() {
 
       const isDark = document.documentElement.classList.contains("dark");
       const isCategoryLayer = activeLayer !== "count";
-      const tileUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+      const tileUrl =
+        `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(process.env.NEXT_PUBLIC_CARTO_API_KEY || "")}`;
 
       const map = L.map(mapRef.current).setView([-8.1, 112.65], 10);
       L.tileLayer(tileUrl, {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+        attribution:
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://carto.com/attributions">CARTO</a>',
         maxZoom: 14,
       }).addTo(map);
 
